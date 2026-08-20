@@ -2,16 +2,22 @@ package com.winlator.cmod.runtime.wine;
 
 import java.util.Locale;
 
-/* Normalizes container LC_ALL into a value glibc inside the imagefs will
- * actually accept. Empty stored value -> derive from the app's current
- * Locale.getDefault() (which AppCompatDelegate.setApplicationLocales has
- * already updated to reflect the Settings > Other > Language picker).
- * Missing country -> best-effort fallback. Missing encoding -> append
- * .UTF-8. Already-encoded values pass through unchanged. */
+/* Guest locale 环境归一化。
+ *
+ * imagefs 不携带任何 glibc locale 数据，请求真实 locale（如 zh_CN.UTF-8）会让
+ * setlocale() 失败并静默回退到纯 "C"（ASCII-only 字符集），wine 命令行上的
+ * 非 ASCII 路径/文件名（快捷方式名、游戏目录、exe 路径）随之全部失效。
+ *
+ * 因此 LC_ALL 固定为 glibc 内建的 C.UTF-8（无需 locale 数据）；用户原始
+ * locale（容器/快捷方式存储值，为空则取设备 locale）改经 LANG 导出。 */
 public final class LocaleEnv {
     private LocaleEnv() {}
 
-    public static String normalize(String stored) {
+    public static String normalize() {
+        return "C.UTF-8";
+    }
+
+    public static String normalizeLang(String stored) {
         if (stored != null && !stored.isEmpty()) {
             return ensureEncoding(stored);
         }

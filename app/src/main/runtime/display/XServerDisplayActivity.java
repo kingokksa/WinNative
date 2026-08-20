@@ -1168,7 +1168,7 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
         com.winlator.cmod.runtime.system.ApplicationLogGate.refresh(this);
         applyPreferredRefreshRate();
         launchedFromPinnedShortcut = isPinnedShortcutLaunchIntent(getIntent());
-        
+
         setContentView(R.layout.xserver_display_activity);
         xServerDisplayFrame = new FrameLayout(this);
         xServerDisplayFrame.setId(R.id.FLXServerDisplay);
@@ -1827,7 +1827,7 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
                     }
                 }
             }
-           
+
             @Override
             public void onMapWindow(Window window) {
                 assignTaskAffinity(window);
@@ -1840,7 +1840,7 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
             @Override
             public void onModifyWindowProperty(Window window, Property property) {
                 changeFrameRatingVisibility(window, property);
-            }    
+            }
 
             @Override
             public void onFramePresented(Window window, WindowManager.FrameSource source, int serial) {
@@ -2824,7 +2824,7 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
                 while (!exitRequested.get()
                         && !activityDestroyed.get()
                         && (System.currentTimeMillis() - startTime) < STEAM_TERMINATION_TIMEOUT_MS) {
-                    
+
                     if (isPaused) {
                         startTime += STEAM_TERMINATION_POLL_MS;
                         if (lastNonCoreSeenAt > 0) lastNonCoreSeenAt += STEAM_TERMINATION_POLL_MS;
@@ -3241,7 +3241,7 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
                 Log.e("XServerLeakCheck", "Remaining leaked session processes after forced cleanup from " + trigger + ": "
                         + ProcessHelper.listRunningWineProcessDetails());
             }
-            
+
             runOnUiThread(() -> cleanupDebugDialog("forced cleanup (" + trigger + ")"));
         }, "XServerForcedCleanup").start();
     }
@@ -3262,7 +3262,7 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
             preloaderDialog.showOnUiThread(
                     getString(R.string.preloader_closing, getString(R.string.preloader_default_name)));
         }
-        
+
         syncStoreCloudOnExit(() -> {
             handler.postDelayed(() -> {
                 if (!beginSessionCleanup("exit")) {
@@ -3331,7 +3331,7 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
                 && BuildConfig.APPLICATION_ID.equals(data.getAuthority())
                 && data.getPathSegments().contains("shortcut");
     }
-    
+
     private void syncStoreCloudOnExit(Runnable onComplete) {
         if (shortcut == null) {
             onComplete.run();
@@ -5713,7 +5713,7 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
                     applyHUDSettings();
                 }
                 updateHUDRenderMode();
-                
+
                 preferences.edit().putBoolean("fps_monitor_enabled", becomingVisible).apply();
                 effectiveShowFPS = becomingVisible;
                 renderDrawerMenu();
@@ -6740,7 +6740,11 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
 
         cleanupLingeringSessionProcesses("new launch");
 
-        envVars.put("LC_ALL", LocaleEnv.normalize(lc_all));
+        // LC_ALL 固定为 C.UTF-8（glibc 内建，imagefs 无 locale 数据也能生效）：
+        // 真实 locale 会让 setlocale() 失败并回退到 ASCII-only 的 "C"，wine
+        // 命令行里的非 ASCII 路径会全部失效。用户原始 locale 改由 LANG 传递。
+        envVars.put("LC_ALL", LocaleEnv.normalize());
+        envVars.put("LANG", LocaleEnv.normalizeLang(lc_all));
         String winePrefix = (shortcut != null && container != null && shortcut.path != null && shortcut.path.matches("^[cC]:.*")) ? new File(container.getRootDir(), ".wine").getAbsolutePath() : imageFs.wineprefix;
         envVars.put("WINEPREFIX", winePrefix);
 
@@ -6772,7 +6776,7 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
 
                 String wineStartCmd = getWineStartCommand(guestProgramLauncherComponent);
                 String guestExecutable;
-            
+
             // Launcher resolves Wine vs ARM64EC execution internally.
             guestExecutable = "wine explorer /desktop=shell," + xServer.screenInfo + " " + wineStartCmd;
 
@@ -7381,7 +7385,7 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
         if (wineRequestHandler != null) wineRequestHandler.start();
 
         dxwrapperConfig = null;
-        
+
     }
 
     private void createWrapperScript(String path, String content) {
@@ -8567,7 +8571,7 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
             String dxvkWrapper = dxwrapper.split(";")[0];
             String vkd3dWrapper = dxwrapper.split(";")[1];
             String ddrawrapper = dxwrapper.split(";")[2];
-            
+
             if (hasSelectedDxvkWrapper(dxvkWrapper)) {
                 ContentProfile dxvkProfile = contentsManager.getProfileByEntryName(dxvkWrapper);
                 if (dxvkProfile != null) {
@@ -8859,10 +8863,10 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
                     }
                 }
                 path = repairStoreExecutableWinPath(gameSource, gameInstallPath, path);
-                
+
                 String filename = path;
                 String dir = null;
-                
+
                 if (path != null && path.contains("\\")) {
                     int lastBackslash = path.lastIndexOf("\\");
                     filename = path.substring(lastBackslash + 1);
@@ -9196,7 +9200,7 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
             }
         }
     }
-    
+
     private String getRelativeGameExePath(String gameExeWinPath, File gameDir) {
         if (gameExeWinPath == null || gameExeWinPath.isEmpty()) return "";
 
@@ -9528,7 +9532,7 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
                         if (!backupClient.exists()) {
                             FileUtils.copy(embeddedClient, backupClient);
                         }
-                        
+
                         embeddedClient.delete();
                         try (InputStream is = getAssets().open(stubAsset);
                              java.io.FileOutputStream fos = new java.io.FileOutputStream(embeddedClient)) {
@@ -9537,7 +9541,7 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
                             while ((len = is.read(buf)) >= 0) fos.write(buf, 0, len);
                         }
                         Log.w("XServerDisplayActivity", "Intercepted explicit embedded Steam client: " + embeddedClient.getAbsolutePath());
-                        
+
                         if (backupPaths != null && appDirPath != null) {
                             String relPath = backupClient.getAbsolutePath();
                             if (relPath.startsWith(appDirPath)) {
@@ -9546,7 +9550,7 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
                             }
                             backupPaths.add(relPath);
                         }
-                        
+
                         SteamUtils.writeCompleteSettingsDir(gameSteamDir,
                                 Integer.parseInt(shortcut.getExtra("app_id")),
                                 language, isOffline, useSteamInput, ticketBase64);
@@ -10336,7 +10340,7 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
 
         generateSteamInterfacesFromDll(dir, dllToScan);
     }
-    
+
     private void setSteamClientVisibility(boolean visible) {
         setSteamClientVisibility(visible, false);
     }
@@ -11675,24 +11679,24 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
 
     private File findGameExe(File dir) {
         if (dir == null || !dir.exists()) return null;
-        
+
         java.util.LinkedList<File[]> queue = new java.util.LinkedList<>();
         queue.add(new File[]{dir});
         int depth = 0;
         File fallbackExe = null;
-        
-        String[] exclusions = {"unins", "redist", "setup", "dotnet", "vcredist", 
+
+        String[] exclusions = {"unins", "redist", "setup", "dotnet", "vcredist",
                                "dxsetup", "helper", "crash", "ue4prereq", "dxwebsetup", "launcher"};
-        
+
         while (!queue.isEmpty() && depth <= 4) {
             File[] currentDirs = queue.poll();
             java.util.List<File> nextDirs = new java.util.ArrayList<>();
             java.util.List<File> candidates = new java.util.ArrayList<>();
-            
+
             for (File d : currentDirs) {
                 File[] children = d.listFiles();
                 if (children == null) continue;
-                
+
                 for (File f : children) {
                     if (f.isDirectory()) {
                         nextDirs.add(f);
@@ -11711,7 +11715,7 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
             }
 
             for (File cand : candidates) {
-                if (cand.getName().toLowerCase().contains("64") || 
+                if (cand.getName().toLowerCase().contains("64") ||
                     (cand.getParentFile() != null && cand.getParentFile().getName().toLowerCase().contains("64"))) {
                     return cand;
                 }
@@ -11720,7 +11724,7 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
             if (fallbackExe == null && !candidates.isEmpty()) {
                 fallbackExe = candidates.get(0);
             }
-            
+
             if (!nextDirs.isEmpty()) queue.add(nextDirs.toArray(new File[0]));
             depth++;
         }
