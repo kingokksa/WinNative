@@ -24,6 +24,28 @@ public final class LocaleEnv {
         return deriveFromDevice();
     }
 
+    /* 把存储的 LC_ALL 值（"ja_JP"、"zh_CN.UTF-8" 等）转成 Wine 10 SxS
+     * activeCodePage 应用设置接受的 BCP-47 locale 名（"ja-JP"）。
+     * bionic 的 setlocale() 只认 C/POSIX/C.UTF-8，Wine 永远无法通过
+     * LANG/LC_ALL 感知真实 locale，ANSI 代码页固定回退 1252；而 Wine 10
+     * 的 ntdll locale_init 会把 activeCodePage 里的任意 locale 名送入
+     * find_lcname_entry 查 NLS 表，采用该 locale 的默认 ANSI/OEM 代码页
+     * （ja-JP -> 932），等效于 Windows 上的 Locale Emulator。
+     * 空值/伪 locale/不合法输入返回 ""（表示不覆盖）。 */
+    public static String toBcp47(String stored) {
+        if (stored == null) return "";
+        String value = stored.trim();
+        int dot = value.indexOf('.');
+        if (dot >= 0) value = value.substring(0, dot);
+        int at = value.indexOf('@');
+        if (at >= 0) value = value.substring(0, at);
+        value = value.trim().replace('_', '-');
+        if (value.isEmpty() || value.equalsIgnoreCase("C")
+                || value.equalsIgnoreCase("POSIX") || value.equalsIgnoreCase("C-UTF-8")) return "";
+        if (!value.matches("^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$")) return "";
+        return value;
+    }
+
     public static String deriveFromDevice() {
         Locale locale = Locale.getDefault();
         String lang = locale.getLanguage();

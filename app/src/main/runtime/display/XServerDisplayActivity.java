@@ -357,6 +357,8 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
         + "    </windowsSettings>\n"
         + "  </application>\n"
         + "</assembly>\n";
+    /** assemblyIdentity marker identifying locale manifests deployed by us (never overwrite game-owned manifests). */
+    private static final String LOCALE_MANIFEST_MARKER = "WinNative.LocaleCodePage";
     private int frameRatingWindowId = -1;
     private android.net.wifi.WifiManager.MulticastLock multicastLock;
     private final float[] xform = XForm.getInstance();
@@ -6789,6 +6791,10 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
 
                 GameFixes.applyForLaunch(container, shortcut);
 
+                // Must run before the guest program starts: deploys/refreshes the
+                // locale activeCodePage manifest next to the game executable.
+                ensureGameLocaleCodePageManifest();
+
                 String wineStartCmd = getWineStartCommand(guestProgramLauncherComponent);
                 String guestExecutable;
 
@@ -7749,6 +7755,152 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
             } catch (Exception e) {
                 Log.w("ContainerLaunch", "Error deploying UTF-8 activeCodePage manifest for " + exeName, e);
             }
+        }
+    }
+
+    /**
+     * External SxS manifest that pins the process ANSI/OEM code page to a specific
+     * locale's defaults (e.g. ja-JP -> 932/Shift-JIS). Wine 10's ntdll locale_init
+     * accepts any locale name as the activeCodePage value (find_lcname_entry lookup
+     * in its NLS tables) — unlike Windows where only "UTF-8" is documented — so this
+     * is the Wine equivalent of running the game through Locale Emulator.
+     */
+    private static String localeCodePageManifest(String localeName) {
+        return "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
+            + "<assembly xmlns=\"urn:schemas-microsoft-com:asm.v1\" manifestVersion=\"1.0\">\n"
+            + "  <assemblyIdentity type=\"win32\" name=\"" + LOCALE_MANIFEST_MARKER + "\" version=\"1.0.0.0\"/>\n"
+            + "  <application xmlns=\"urn:schemas-microsoft-com:asm.v3\">\n"
+            + "    <windowsSettings>\n"
+            + "      <activeCodePage xmlns=\"http://schemas.microsoft.com/SMI/2019/WindowsSettings\">"
+            + localeName + "</activeCodePage>\n"
+            + "    </windowsSettings>\n"
+            + "  </application>\n"
+            + "</assembly>\n";
+    }
+
+    /**
+     * The imagefs runs on Android's bionic libc, whose setlocale() only accepts
+     * C/POSIX/C.UTF-8. Wine therefore can never learn a real guest locale (e.g.
+     * ja_JP) from LANG/LC_ALL and always derives the legacy ANSI code page 1252.
+     * ANSI games built for a Japanese system (Shift-JIS strings, A-variant APIs)
+     * then render every Japanese character as '?' and fail to resolve their own
+     * Shift-JIS paths, typically aborting with an unreadable error dialog.
+     *
+     * Wine 10 supports per-process code page overrides through the SxS
+     * activeCodePage application setting, and — unlike Windows — accepts a locale
+     * name there. Driven by the shortcut/container LC_ALL setting, we deploy
+     * "<game>.exe.manifest" next to the game executable so the game runs with its
+     * locale's real ANSI/OEM code page. Only manifests carrying our marker are
+     * managed; game-shipped manifests are never touched. Clearing the locale
+     * removes a manifest we deployed earlier.
+     */
+    private void ensureGameLocaleCodePageManifest() {
+        if (shortcut == null || container == null) return;
+        String gamePath = shortcut.path;
+        if (gamePath == null || gamePath.isEmpty()) return;
+        if (!gamePath.toLowerCase().endsWith(".exe")) return;
+
+        String localeName = LocaleEnv.toBcp47(lc_all);
+        try {
+            File exeFile = WineUtils.getNativePath(container, imageFs, gamePath);
+            if (exeFile == null || !exeFile.isFile()) {
+                Log.w("ContainerLaunch", "Locale manifest: game exe not found for " + gamePath);
+                return;
+            }
+            File manifestFile = new File(exeFile.getParentFile(), exeFile.getName() + ".manifest");
+            String current = manifestFile.isFile() ? FileUtils.readString(manifestFile) : null;
+
+            if (localeName.isEmpty()) {
+                if (current != null && current.contains(LOCALE_MANIFEST_MARKER) && manifestFile.delete()) {
+                    Log.d("ContainerLaunch", "Removed locale activeCodePage manifest for " + gamePath);
+                }
+                return;
+            }
+
+            // Wine prefers an embedded RT_MANIFEST resource over the external
+            // <exe>.manifest file; if the game ships one without activeCodePage,
+            // our override is silently ignored (ANSI code page stays 1252).
+            if (exeHasEmbeddedManifest(exeFile)) {
+                Log.w("ContainerLaunch", "Game exe has an embedded manifest; the external "
+                        + localeName + " activeCodePage manifest may be ignored for " + gamePath);
+            }
+
+            String manifest = localeCodePageManifest(localeName);
+            if (manifest.equals(current)) return;
+            if (current != null && !current.contains(LOCALE_MANIFEST_MARKER)
+                    && !current.contains("WinNative.Utf8CodePage")) {
+                Log.w("ContainerLaunch", "Game ships its own manifest, not overriding: " + manifestFile);
+                return;
+            }
+            if (FileUtils.writeString(manifestFile, manifest)) {
+                Log.d("ContainerLaunch", "Deployed " + localeName + " activeCodePage manifest for " + gamePath);
+            } else {
+                Log.w("ContainerLaunch", "Failed to deploy " + localeName + " activeCodePage manifest for " + gamePath);
+            }
+        } catch (Exception e) {
+            Log.w("ContainerLaunch", "Error deploying locale manifest for " + gamePath, e);
+        }
+    }
+
+    /** Minimal PE scan: does the executable embed an RT_MANIFEST (type 16) resource? */
+    private static boolean exeHasEmbeddedManifest(File exeFile) {
+        try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(exeFile, "r")) {
+            byte[] hdr = new byte[2];
+            raf.seek(0);
+            raf.readFully(hdr);
+            if (hdr[0] != 'M' || hdr[1] != 'Z') return false;
+
+            raf.seek(0x3C);
+            int peOffset = Integer.reverseBytes(raf.readInt());
+            raf.seek(peOffset);
+            int sig = Integer.reverseBytes(raf.readInt());
+            if (sig != 0x00004550) return false; // "PE\0\0"
+
+            raf.skipBytes(2); // machine
+            int numSections = Short.reverseBytes(raf.readShort()) & 0xFFFF;
+            raf.skipBytes(12);
+            int optHeaderSize = Short.reverseBytes(raf.readShort()) & 0xFFFF;
+            raf.skipBytes(2); // characteristics
+
+            long optHeaderPos = raf.getFilePointer();
+            int magic = Short.reverseBytes(raf.readShort()) & 0xFFFF;
+            boolean pe32Plus = magic == 0x20B;
+
+            // Resource table is data directory entry index 2
+            int ddOffset = pe32Plus ? 112 : 96;
+            raf.seek(optHeaderPos + ddOffset + 2L * 8);
+            int resRva = Integer.reverseBytes(raf.readInt());
+            int resSize = Integer.reverseBytes(raf.readInt());
+            if (resRva == 0 || resSize == 0) return false;
+
+            // Map RVA -> file offset via the section table
+            long sectionStart = optHeaderPos + optHeaderSize;
+            long resFileOffset = 0;
+            for (int i = 0; i < numSections; i++) {
+                raf.seek(sectionStart + i * 40L + 12); // virtualAddress
+                int va = Integer.reverseBytes(raf.readInt());
+                int rawSize = Integer.reverseBytes(raf.readInt());
+                int rawPtr = Integer.reverseBytes(raf.readInt());
+                if (resRva >= va && resRva < va + rawSize) {
+                    resFileOffset = (long) rawPtr + (resRva - va);
+                    break;
+                }
+            }
+            if (resFileOffset == 0) return false;
+
+            // First level of the resource directory lists types; look for RT_MANIFEST (16)
+            raf.seek(resFileOffset + 12);
+            int named = Short.reverseBytes(raf.readShort()) & 0xFFFF;
+            int ided = Short.reverseBytes(raf.readShort()) & 0xFFFF;
+            raf.skipBytes(named * 8);
+            for (int i = 0; i < ided; i++) {
+                int id = Integer.reverseBytes(raf.readInt());
+                raf.skipBytes(4); // offset to data/subdir
+                if (id == 16) return true;
+            }
+            return false;
+        } catch (Exception e) {
+            return false;
         }
     }
 
