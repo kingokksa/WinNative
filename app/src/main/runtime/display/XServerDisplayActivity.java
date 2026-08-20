@@ -342,6 +342,21 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
     private static final String[] SHELL_AFFINITY_PROCESSES = {
         "explorer.exe", "steamwebhelper.exe"
     };
+    /**
+     * External SxS manifest that switches an ANSI executable to the UTF-8 active code page.
+     * Wine 10 reads it via the process activation context (ntdll locale_init queries
+     * RtlQueryActivationContextApplicationSettings for "activeCodePage").
+     */
+    private static final String UTF8_ACTIVE_CODEPAGE_MANIFEST =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
+        + "<assembly xmlns=\"urn:schemas-microsoft-com:asm.v1\" manifestVersion=\"1.0\">\n"
+        + "  <assemblyIdentity type=\"win32\" name=\"WinNative.Utf8CodePage\" version=\"1.0.0.0\"/>\n"
+        + "  <application xmlns=\"urn:schemas-microsoft-com:asm.v3\">\n"
+        + "    <windowsSettings>\n"
+        + "      <activeCodePage xmlns=\"http://schemas.microsoft.com/SMI/2019/WindowsSettings\">UTF-8</activeCodePage>\n"
+        + "    </windowsSettings>\n"
+        + "  </application>\n"
+        + "</assembly>\n";
     private int frameRatingWindowId = -1;
     private android.net.wifi.WifiManager.MulticastLock multicastLock;
     private final float[] xform = XForm.getInstance();
@@ -7704,6 +7719,35 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
                 for (String filename : essentialFiles) {
                     Log.d("ContainerLaunch", filename + " exists after extraction: " + new File(containerWindowsDir, filename).exists());
                 }
+            }
+        }
+
+        ensureUtf8CodePageManifests(containerWindowsDir, essentialFiles);
+    }
+
+    /**
+     * winhandler.exe/wfm.exe are ANSI binaries: their CRT argv is built from GetCommandLineA
+     * and games are launched via ShellExecuteA. When the process codepage is a legacy ANSI
+     * codepage (e.g. 1252), every non-ASCII character in the path becomes '?', which is an
+     * invalid Windows filename character, so ShellExecuteA fails with ERROR_INVALID_NAME
+     * ("invalid name" dialog) and the game never starts. The UTF-8 activeCodePage manifest
+     * deployed next to these executables makes Wine use UTF-8 for all A-variant APIs in
+     * those processes, so non-ASCII paths pass through unchanged.
+     */
+    private void ensureUtf8CodePageManifests(File windowsDir, String[] exeNames) {
+        if (windowsDir == null || !windowsDir.isDirectory()) return;
+        for (String exeName : exeNames) {
+            try {
+                File manifestFile = new File(windowsDir, exeName + ".manifest");
+                String current = manifestFile.isFile() ? FileUtils.readString(manifestFile) : null;
+                if (UTF8_ACTIVE_CODEPAGE_MANIFEST.equals(current)) continue;
+                if (FileUtils.writeString(manifestFile, UTF8_ACTIVE_CODEPAGE_MANIFEST)) {
+                    Log.d("ContainerLaunch", "Deployed UTF-8 activeCodePage manifest for " + exeName);
+                } else {
+                    Log.w("ContainerLaunch", "Failed to deploy UTF-8 activeCodePage manifest for " + exeName);
+                }
+            } catch (Exception e) {
+                Log.w("ContainerLaunch", "Error deploying UTF-8 activeCodePage manifest for " + exeName, e);
             }
         }
     }
