@@ -102,9 +102,12 @@ object LogManager {
                 runBlockingLogcatCommand(arrayOf("logcat", "-c"))
             }
             val pid = android.os.Process.myPid()
+            // Capture Debug+ (Log.d/i/w/e) from the app process so timing logs like
+            // ContainerLaunch / GuestLauncher / XServerDisplayActivity are included.
+            // (Previous *:W only kept Warning+ and dropped the debug/info timing lines.)
             appLogProcess =
                 Runtime.getRuntime().exec(
-                    arrayOf("logcat", "-f", logFile.absolutePath, "-r", "8192", "-n", "2", "--pid=$pid", "*:W"),
+                    arrayOf("logcat", "-f", logFile.absolutePath, "-r", "8192", "-n", "2", "--pid=$pid", "*:D"),
                 )
             closeProcessStdin(appLogProcess)
             Log.i(TAG, "Application debug logging started (PID=$pid)")
