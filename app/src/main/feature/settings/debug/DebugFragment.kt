@@ -85,6 +85,15 @@ class DebugFragment : Fragment() {
                                 }
                                 refresh()
                             },
+                            onAppLogLevelChanged = { level ->
+                                preferences.edit { putString("app_log_level", level) }
+                                // Restart capture so the new level takes effect immediately.
+                                if (preferences.getBoolean("enable_app_debug", false)) {
+                                    com.winlator.cmod.runtime.system.LogManager
+                                        .startAppLogging(ctx, reset = true)
+                                }
+                                refresh()
+                            },
                             onWineDebugChanged = { checked ->
                                 preferences.edit { putBoolean("enable_wine_debug", checked) }
                                 com.winlator.cmod.runtime.system.LogManager
@@ -206,6 +215,7 @@ class DebugFragment : Fragment() {
         debugState =
             DebugState(
                 appDebug = preferences.getBoolean("enable_app_debug", false),
+                appLogLevel = preferences.getString("app_log_level", "D") ?: "D",
                 wineDebug = preferences.getBoolean("enable_wine_debug", false),
                 wineChannels = channels,
                 wineClasses = classes,

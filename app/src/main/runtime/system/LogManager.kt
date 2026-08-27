@@ -102,19 +102,27 @@ object LogManager {
                 runBlockingLogcatCommand(arrayOf("logcat", "-c"))
             }
             val pid = android.os.Process.myPid()
-            // Capture Debug+ (Log.d/i/w/e) from the app process so timing logs like
-            // ContainerLaunch / GuestLauncher / XServerDisplayActivity are included.
-            // (Previous *:W only kept Warning+ and dropped the debug/info timing lines.)
+            // Configurable level (like the wine log settings), default Debug so timing logs
+            // (Log.d/Log.i: ContainerLaunch / GuestLauncher / XServerDisplayActivity) are kept.
+            val level = appLogPriority(prefs)
             appLogProcess =
                 Runtime.getRuntime().exec(
-                    arrayOf("logcat", "-f", logFile.absolutePath, "-r", "8192", "-n", "2", "--pid=$pid", "*:D"),
+                    arrayOf("logcat", "-f", logFile.absolutePath, "-r", "8192", "-n", "2", "--pid=$pid", "*:$level"),
                 )
             closeProcessStdin(appLogProcess)
-            Log.i(TAG, "Application debug logging started (PID=$pid)")
+            Log.i(TAG, "Application debug logging started (PID=$pid, level=$level)")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start application logging: ${e.message}")
         }
     }
+
+    /** Resolves the configured app-log level preference to a logcat priority letter.
+     *  Valid values: V, D, I, W, E. Falls back to D. */
+    @JvmStatic
+    fun appLogPriority(prefs: android.content.SharedPreferences): Char =
+        prefs.getString("app_log_level", "D")?.trim()?.firstOrNull()?.uppercaseChar()?.takeIf {
+            it == 'V' || it == 'D' || it == 'I' || it == 'W' || it == 'E'
+        } ?: 'D'
 
     @JvmStatic
     fun stopAppLogging() {
