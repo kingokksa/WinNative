@@ -2172,9 +2172,9 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity
                         }
                     }
 
-                    // Parallel prep (cloud sync + Steam prefix DLL/asset setup + hot-file page-cache warm), joined before setupXEnvironment so the launcher sees a complete prefix.
+                    // Parallel prep (cloud sync + Steam prefix DLL/asset setup), joined before setupXEnvironment so the launcher sees a complete prefix.
                     java.util.concurrent.ExecutorService prepExec =
-                            java.util.concurrent.Executors.newFixedThreadPool(3);
+                            java.util.concurrent.Executors.newFixedThreadPool(2);
                     java.util.concurrent.Future<?> cloudFuture = prepExec.submit(() -> {
                         try {
                             SteamLaunchCloudSync.syncBeforeLaunch(
@@ -2201,23 +2201,6 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity
                                 }
                             })
                             : null;
-                    // Warm the page cache for the game's hot DLLs (Unity _Data/Managed, MonoBleedingEdge)
-                    // so the guest's LoadLibrary hits warm pages instead of slow FUSE external storage.
-                    // Best-effort and bounded; game stays in the visible external directory (unchanged).
-                    // Gated by a preference (default on) so it can be A/B-tested / disabled.
-                    boolean hotFileWarmEnabled = preferences.getBoolean("game_hot_file_warm", true);
-                    java.util.concurrent.Future<?> hotWarmFuture = hotFileWarmEnabled
-                            ? prepExec.submit(() -> {
-                                try {
-                                    String gameDir = getActiveGameDirectoryPath();
-                                    if (gameDir != null && !gameDir.isEmpty()) {
-                                        com.winlator.cmod.runtime.display.GameHotFileWarm.INSTANCE.warm(new java.io.File(gameDir));
-                                    }
-                                } catch (Throwable t) {
-                                    Log.w("XServerDisplayActivity", "Game hot-file warm failed", t);
-                                }
-                            })
-                            : null;
                     prepExec.shutdown();
 
                     if (preloaderDialog != null && isSteamShortcut()) {
@@ -2238,16 +2221,6 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity
                     } catch (Throwable t) {
                         Log.w("XServerDisplayActivity",
                                 "Cloud sync wait interrupted", t);
-                    }
-                    // Wait for the hot-file warm so the guest starts with a warm page cache.
-                    // Capped internally, so this never stalls the launch for long.
-                    if (hotWarmFuture != null) {
-                        try {
-                            hotWarmFuture.get();
-                        } catch (Throwable t) {
-                            Log.w("XServerDisplayActivity",
-                                    "Game hot-file warm wait interrupted", t);
-                        }
                     }
                 } else {
                     Log.i("XServerDisplayActivity", "Skipping pre-game setup for active background session");
