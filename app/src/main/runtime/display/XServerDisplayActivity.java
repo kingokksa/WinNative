@@ -7205,25 +7205,6 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity
 
             guestProgramLauncherComponent.setGuestExecutable(guestExecutable);
 
-            // Many games (Unity, e.g. MiSide) resolve language packs / data files relative
-            // to the current working directory. Launching from elsewhere (the launcher
-            // defaults to the imagefs root) makes them miss the language pack even though
-            // it sits in the game folder — the same game works when you `cd` into the
-            // folder and run the exe. Set the guest process working directory to the game
-            // folder for shortcut launches.
-            String activeGameDir = getActiveGameDirectoryPath();
-            if (activeGameDir != null && !activeGameDir.isEmpty()) {
-                File gameDirFile = new File(activeGameDir);
-                if (gameDirFile.isDirectory()) {
-                    guestProgramLauncherComponent.setWorkingDir(gameDirFile);
-                    Log.d("XServerDisplayActivity", "Guest working dir set to game folder: "
-                            + gameDirFile.getPath());
-                } else {
-                    Log.w("XServerDisplayActivity", "Guest working dir: game folder not found: "
-                            + activeGameDir);
-                }
-            }
-
             String rawShortcutEnvVars = (shortcut != null && !shortcutUsesContainerDefaults())
                     ? shortcut.getExtra("envVars") : "";
             String effectiveCustomEnvVars = shortcut != null
@@ -9552,7 +9533,7 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity
                     dir = "F:\\";
                 }
 
-                File nativeDir = com.winlator.cmod.runtime.wine.WineUtils.getNativePath(imageFs, dir);
+                File nativeDir = com.winlator.cmod.runtime.wine.WineUtils.getNativePath(this.container, imageFs, dir);
                 if (nativeDir != null && nativeDir.exists()) {
                     launcherComponent.setWorkingDir(nativeDir);
                     Log.d("XServerDisplayActivity", "Set native working dir for store process: " + nativeDir.getPath());
@@ -9574,9 +9555,22 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity
                 } else if (path != null) {
                     String nativeDirPath = getActiveGameDirectoryPath();
                     if (nativeDirPath != null) {
-                        File nativeDir = new File(nativeDirPath);
-                        launcherComponent.setWorkingDir(nativeDir);
-                        Log.d("XServerDisplayActivity", "Set native working dir for Custom process: " + nativeDir.getPath());
+                        File nativeDir = null;
+                        String winDir =
+                                com.winlator.cmod.runtime.wine.WineUtils
+                                        .hostPathToRootWinePath(container, nativeDirPath);
+                        if (winDir != null && !winDir.isEmpty()) {
+                            nativeDir =
+                                    com.winlator.cmod.runtime.wine.WineUtils
+                                            .getNativePath(container, imageFs, winDir);
+                        }
+                        if (nativeDir == null || !nativeDir.isDirectory()) {
+                            nativeDir = new File(nativeDirPath);
+                        }
+                        if (nativeDir.isDirectory()) {
+                            launcherComponent.setWorkingDir(nativeDir);
+                            Log.d("XServerDisplayActivity", "Set native working dir for Custom process: " + nativeDir.getPath());
+                        }
                     } else {
                         int lastBackslash = path.lastIndexOf("\\");
                         if (lastBackslash >= 0) {
