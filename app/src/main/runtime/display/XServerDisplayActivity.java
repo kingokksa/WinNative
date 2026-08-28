@@ -7205,6 +7205,25 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity
 
             guestProgramLauncherComponent.setGuestExecutable(guestExecutable);
 
+            // Many games (Unity, e.g. MiSide) resolve language packs / data files relative
+            // to the current working directory. Launching from elsewhere (the launcher
+            // defaults to the imagefs root) makes them miss the language pack even though
+            // it sits in the game folder — the same game works when you `cd` into the
+            // folder and run the exe. Set the guest process working directory to the game
+            // folder for shortcut launches.
+            String activeGameDir = getActiveGameDirectoryPath();
+            if (activeGameDir != null && !activeGameDir.isEmpty()) {
+                File gameDirFile = new File(activeGameDir);
+                if (gameDirFile.isDirectory()) {
+                    guestProgramLauncherComponent.setWorkingDir(gameDirFile);
+                    Log.d("XServerDisplayActivity", "Guest working dir set to game folder: "
+                            + gameDirFile.getPath());
+                } else {
+                    Log.w("XServerDisplayActivity", "Guest working dir: game folder not found: "
+                            + activeGameDir);
+                }
+            }
+
             String rawShortcutEnvVars = (shortcut != null && !shortcutUsesContainerDefaults())
                     ? shortcut.getExtra("envVars") : "";
             String effectiveCustomEnvVars = shortcut != null
