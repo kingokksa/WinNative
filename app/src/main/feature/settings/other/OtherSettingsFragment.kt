@@ -108,6 +108,10 @@ class OtherSettingsFragment : Fragment() {
                                 )
                             }
                         },
+                        onDownloadSourceBaseChanged = { base ->
+                            preferences.edit { putString("download_source_base", base) }
+                            refresh()
+                        },
                         onLanguageSelected = { index ->
                             val currentIndex =
                                 LocaleHelper.indexForTag(
@@ -225,6 +229,7 @@ class OtherSettingsFragment : Fragment() {
         uiState =
             OtherSettingsState(
                 checkForUpdates = preferences.getBoolean("check_for_updates", false),
+                downloadSourceBase = preferences.getString("download_source_base", "") ?: "",
                 languageLabels = languageLabels,
                 languageIndex = languageIndex,
                 soundFontFiles = soundFontFiles,
