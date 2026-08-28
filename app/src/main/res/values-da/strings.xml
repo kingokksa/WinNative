@@ -2542,4 +2542,16 @@ Installeret sti:
     <string name="settings_frame_generation_updated">Opdateret fra %1$s.</string>
     <string name="settings_frame_generation_not_owned">Billedgenerering bruger shaders fra Lossless Scaling. Køb det på Steam med den tilmeldte konto for at aktivere dette.</string>
     <string name="settings_frame_generation_locate">Vælg Lossless.dll…</string>
+    <string name="settings_other_download_source_title">Downloadkilde (GitHub-spejl)</string>
+    <string name="settings_other_download_source_default">GitHub (standard)</string>
+    <string name="settings_other_download_source_message">Tænd for at hente komponenter via en kinesisk GitHub-accelerator (fx gh-proxy.com). Angiv en fungerende proxy; resultatet er {proxy}/https://github.com/... Fra = direkte GitHub.</string>
+    <string name="settings_other_download_source_hint">GitHub-proxy-base-URL</string>
+    <string name="setup_wizard_mirror">Spejl</string>
+    <string name="containers_set_default">Sæt som standard</string>
+    <string name="containers_default_badge">Standard</string>
+    <string name="containers_set_default_success">%1$s-containeren er sat som standard for nye spil. Eksisterende spil er ikke påvirket.</string>
+    <string name="container_config_arch_x86_64">x86-64</string>
+    <string name="container_config_arch_arm64">ARM64EC</string>
+    <string name="steam_download_use_china_cdn">Steam Kina-CDN</string>
+    <string name="steam_download_use_china_cdn_summary">Medtag kun-Kina Steam-servere. Fra som standard.</string>
 </resources>

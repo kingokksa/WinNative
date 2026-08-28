@@ -2540,5 +2540,17 @@
     <string name="settings_frame_generation_updated">已從 %1$s 更新。</string>
     <string name="settings_frame_generation_not_owned">影格生成使用 Lossless Scaling 的著色器。請使用目前登入的帳號在 Steam 上購買以啟用此功能。</string>
     <string name="settings_frame_generation_locate">選擇 Lossless.dll…</string>
+    <string name="settings_other_download_source_title">下載來源（GitHub 鏡像）</string>
+    <string name="settings_other_download_source_default">GitHub（預設）</string>
+    <string name="settings_other_download_source_message">開啟後透過中國 GitHub 加速（例如 gh-proxy.com）下載元件。請填入可用的代理；結果形如 {proxy}/https://github.com/... 關閉＝直接連 GitHub。</string>
+    <string name="settings_other_download_source_hint">GitHub 代理基礎網址</string>
+    <string name="setup_wizard_mirror">鏡像</string>
+    <string name="containers_set_default">設為預設</string>
+    <string name="containers_default_badge">預設</string>
+    <string name="containers_set_default_success">已將 %1$s 容器設為新遊戲預設。不影響已有遊戲。</string>
+    <string name="container_config_arch_x86_64">x86-64</string>
+    <string name="container_config_arch_arm64">ARM64EC</string>
+    <string name="steam_download_use_china_cdn">Steam 中國 CDN</string>
+    <string name="steam_download_use_china_cdn_summary">包含僅限中國的 Steam 伺服器。預設關閉。</string>
 </resources>
 

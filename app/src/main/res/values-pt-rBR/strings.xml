@@ -2541,5 +2541,17 @@ Caminho instalado:
     <string name="settings_frame_generation_updated">Atualizado de %1$s.</string>
     <string name="settings_frame_generation_not_owned">A geração de quadros usa shaders do Lossless Scaling. Compre-o na Steam com a conta conectada para ativar isso.</string>
     <string name="settings_frame_generation_locate">Selecionar Lossless.dll…</string>
+    <string name="settings_other_download_source_title">Origem do download (espelho GitHub)</string>
+    <string name="settings_other_download_source_default">GitHub (padrão)</string>
+    <string name="settings_other_download_source_message">Ative para baixar componentes por um acelerador GitHub chinês (ex.: gh-proxy.com). Informe um proxy que funcione; o resultado é {proxy}/https://github.com/... Desligado = GitHub direto.</string>
+    <string name="settings_other_download_source_hint">URL base do proxy do GitHub</string>
+    <string name="setup_wizard_mirror">Espelho</string>
+    <string name="containers_set_default">Definir como padrão</string>
+    <string name="containers_default_badge">Padrão</string>
+    <string name="containers_set_default_success">Contêiner %1$s definido como padrão para novos jogos. Jogos existentes não são afetados.</string>
+    <string name="container_config_arch_x86_64">x86-64</string>
+    <string name="container_config_arch_arm64">ARM64EC</string>
+    <string name="steam_download_use_china_cdn">CDN chinês da Steam</string>
+    <string name="steam_download_use_china_cdn_summary">Incluir servidores Steam só-China. Desligado por padrão.</string>
 </resources>
 

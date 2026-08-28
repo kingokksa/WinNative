@@ -85,20 +85,6 @@ class DebugFragment : Fragment() {
                                 }
                                 refresh()
                             },
-                            onAppLogLevelChanged = { level ->
-                                preferences.edit { putString("app_log_level", level) }
-                                // Restart capture off the main thread so the logcat exec (and its
-                                // waitFor) can never ANR/crash the settings UI.
-                                if (preferences.getBoolean("enable_app_debug", false)) {
-                                    runCatching {
-                                        Thread {
-                                            com.winlator.cmod.runtime.system.LogManager
-                                                .startAppLogging(ctx, reset = true)
-                                        }.start()
-                                    }
-                                }
-                                refresh()
-                            },
                             onWineDebugChanged = { checked ->
                                 preferences.edit { putBoolean("enable_wine_debug", checked) }
                                 com.winlator.cmod.runtime.system.LogManager
@@ -220,7 +206,6 @@ class DebugFragment : Fragment() {
         debugState =
             DebugState(
                 appDebug = preferences.getBoolean("enable_app_debug", false),
-                appLogLevel = preferences.getString("app_log_level", "D") ?: "D",
                 wineDebug = preferences.getBoolean("enable_wine_debug", false),
                 wineChannels = channels,
                 wineClasses = classes,

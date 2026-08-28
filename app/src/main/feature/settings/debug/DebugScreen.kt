@@ -148,7 +148,6 @@ private val TextSecondary = Color(0xFF7A8FA8)
 // State
 data class DebugState(
     val appDebug: Boolean = false,
-    val appLogLevel: String = "D",
     val wineDebug: Boolean = false,
     val wineChannels: List<String> = emptyList(),
     val wineClasses: List<String> = emptyList(),
@@ -177,7 +176,6 @@ fun DebugScreen(
     wineChannelOptions: List<String>,
     wineClassOptions: List<String>,
     onAppDebugChanged: (Boolean) -> Unit,
-    onAppLogLevelChanged: (String) -> Unit,
     onWineDebugChanged: (Boolean) -> Unit,
     onWineChannelsChanged: (List<String>) -> Unit,
     onWineClassesChanged: (List<String>) -> Unit,
@@ -262,12 +260,6 @@ fun DebugScreen(
                 accentColor = Warning,
                 checked = state.appDebug,
                 onCheckedChange = onAppDebugChanged,
-            )
-
-            AppLogLevelCard(
-                level = state.appLogLevel,
-                enabled = state.appDebug,
-                onLevel = onAppLogLevelChanged,
             )
 
             SectionLabel(stringResource(R.string.settings_debug_section_emulation), modifier = Modifier.padding(top = 8.dp))
@@ -565,78 +557,6 @@ private fun WineChannelsCard(
                             )
                         }
                     }
-                }
-            }
-        }
-    }
-}
-
-// Application log level card (Verbose/Debug/Info/Warning/Error)
-@Composable
-private fun AppLogLevelCard(
-    level: String,
-    enabled: Boolean,
-    onLevel: (String) -> Unit,
-) {
-    val levels = listOf("V", "D", "I", "W", "E")
-    Box(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .alpha(if (enabled) 1f else 0.48f)
-                .clip(RoundedCornerShape(12.dp))
-                .background(CardDark)
-                .border(1.dp, CardBorder, RoundedCornerShape(12.dp)),
-    ) {
-        Column(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier =
-                        Modifier
-                            .size(34.dp)
-                            .clip(RoundedCornerShape(9.dp))
-                            .background(IconBoxBg),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Tune,
-                        contentDescription = null,
-                        tint = Accent,
-                        modifier = Modifier.size(17.dp),
-                    )
-                }
-                Spacer(Modifier.width(13.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.settings_debug_app_log_level_title),
-                        color = TextPrimary,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    Text(
-                        text = stringResource(R.string.settings_debug_app_log_level_summary),
-                        color = TextSecondary,
-                        fontSize = 11.sp,
-                    )
-                }
-            }
-            Spacer(Modifier.height(10.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                levels.forEach { lvl ->
-                    ClassChip(
-                        label = lvl,
-                        isSelected = level.equals(lvl, ignoreCase = true),
-                        enabled = enabled,
-                        onToggle = { onLevel(lvl) },
-                    )
                 }
             }
         }

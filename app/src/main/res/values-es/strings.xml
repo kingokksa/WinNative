@@ -2541,5 +2541,17 @@ Ruta instalada:
     <string name="settings_frame_generation_updated">Actualizado desde %1$s.</string>
     <string name="settings_frame_generation_not_owned">La generación de fotogramas usa sombreadores de Lossless Scaling. Cómpralo en Steam con la cuenta con la que has iniciado sesión para activarlo.</string>
     <string name="settings_frame_generation_locate">Seleccionar Lossless.dll…</string>
+    <string name="settings_other_download_source_title">Fuente de descarga (espejo de GitHub)</string>
+    <string name="settings_other_download_source_default">GitHub (predeterminado)</string>
+    <string name="settings_other_download_source_message">Actívalo para descargar componentes mediante un acelerador chino de GitHub (p. ej. gh-proxy.com). Pon un proxy que funcione; el resultado es {proxy}/https://github.com/... Apagado = GitHub directo.</string>
+    <string name="settings_other_download_source_hint">URL base del proxy de GitHub</string>
+    <string name="setup_wizard_mirror">Espejo</string>
+    <string name="containers_set_default">Establecer como predeterminado</string>
+    <string name="containers_default_badge">Predeterminado</string>
+    <string name="containers_set_default_success">Contenedor %1$s establecido como predeterminado para juegos nuevos. Los existentes no cambian.</string>
+    <string name="container_config_arch_x86_64">x86-64</string>
+    <string name="container_config_arch_arm64">ARM64EC</string>
+    <string name="steam_download_use_china_cdn">CDN china de Steam</string>
+    <string name="steam_download_use_china_cdn_summary">Incluir servidores solo-China de Steam. Desactivado por defecto.</string>
 </resources>
 

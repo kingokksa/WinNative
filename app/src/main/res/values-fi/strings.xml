@@ -2540,4 +2540,16 @@ Asennuspolku:
     <string name="settings_frame_generation_updated">Päivitetty kohteesta %1$s.</string>
     <string name="settings_frame_generation_not_owned">Ruudun generointi käyttää Lossless Scalingin varjostimia. Osta se Steamista kirjautuneella tilillä ottaaksesi tämän käyttöön.</string>
     <string name="settings_frame_generation_locate">Valitse Lossless.dll…</string>
+    <string name="settings_other_download_source_title">Latauslähde (GitHub-peili)</string>
+    <string name="settings_other_download_source_default">GitHub (oletus)</string>
+    <string name="settings_other_download_source_message">Ota käyttöön ladataksesi komponentit kiinalaisen GitHub-nopeuttimen kautta (esim. gh-proxy.com). Kirjoita toimiva välityspalvelin; tulos on {proxy}/https://github.com/... Pois = suora GitHub.</string>
+    <string name="settings_other_download_source_hint">GitHub-välityspalvelimen perus-URL</string>
+    <string name="setup_wizard_mirror">Peili</string>
+    <string name="containers_set_default">Aseta oletukseksi</string>
+    <string name="containers_default_badge">Oletus</string>
+    <string name="containers_set_default_success">%1$s-säilö asetettu oletukseksi uusille peleille. Olemassa oleviin ei vaikuteta.</string>
+    <string name="container_config_arch_x86_64">x86-64</string>
+    <string name="container_config_arch_arm64">ARM64EC</string>
+    <string name="steam_download_use_china_cdn">Steamin Kiina-CDN</string>
+    <string name="steam_download_use_china_cdn_summary">Sisällytä vain Kiinan Steam-palvelimet. Oletuksena pois.</string>
 </resources>

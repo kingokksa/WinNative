@@ -2540,4 +2540,16 @@
     <string name="settings_frame_generation_updated">%1$s から更新しました。</string>
     <string name="settings_frame_generation_not_owned">フレーム生成は Lossless Scaling のシェーダーを使用します。有効にするには、サインイン中のアカウントで Steam から購入してください。</string>
     <string name="settings_frame_generation_locate">Lossless.dll を選択…</string>
+    <string name="settings_other_download_source_title">ダウンロード元（GitHubミラー）</string>
+    <string name="settings_other_download_source_default">GitHub（デフォルト）</string>
+    <string name="settings_other_download_source_message">中国のGitHubアクセラレータ（例: gh-proxy.com）経由でコンポーネントをダウンロードするにはオンにします。動作するプロキシを入力してください。結果は {proxy}/https://github.com/... のようになります。オフ＝GitHub直結。</string>
+    <string name="settings_other_download_source_hint">GitHubプロキシのベースURL</string>
+    <string name="setup_wizard_mirror">ミラー</string>
+    <string name="containers_set_default">既定として設定</string>
+    <string name="containers_default_badge">既定</string>
+    <string name="containers_set_default_success">%1$s コンテナを新しいゲームの既定に設定しました。既存のゲームには影響しません。</string>
+    <string name="container_config_arch_x86_64">x86-64</string>
+    <string name="container_config_arch_arm64">ARM64EC</string>
+    <string name="steam_download_use_china_cdn">Steam 中国CDN</string>
+    <string name="steam_download_use_china_cdn_summary">中国専用Steamサーバーを含めます。既定ではオフ。</string>
 </resources>

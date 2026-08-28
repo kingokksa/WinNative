@@ -2447,4 +2447,16 @@
     <string name="settings_frame_generation_updated">Обновлено из %1$s.</string>
     <string name="settings_frame_generation_not_owned">Генерация кадров использует шейдеры Lossless Scaling. Купите его в Steam под текущей учётной записью, чтобы включить эту функцию.</string>
     <string name="settings_frame_generation_locate">Выбрать Lossless.dll…</string>
+    <string name="settings_other_download_source_title">Источник загрузки (зеркало GitHub)</string>
+    <string name="settings_other_download_source_default">GitHub (по умолчанию)</string>
+    <string name="settings_other_download_source_message">Включите, чтобы загружать компоненты через китайский ускоритель GitHub (например, gh-proxy.com). Укажите рабочий прокси; результат выглядит как {proxy}/https://github.com/... Выкл = напрямую GitHub.</string>
+    <string name="settings_other_download_source_hint">Базовый URL прокси GitHub</string>
+    <string name="setup_wizard_mirror">Зеркало</string>
+    <string name="containers_set_default">Установить по умолчанию</string>
+    <string name="containers_default_badge">По умолчанию</string>
+    <string name="containers_set_default_success">Контейнер %1$s установлен по умолчанию для новых игр. Существующие игры не затрагиваются.</string>
+    <string name="container_config_arch_x86_64">x86-64</string>
+    <string name="container_config_arch_arm64">ARM64EC</string>
+    <string name="steam_download_use_china_cdn">Китайский CDN Steam</string>
+    <string name="steam_download_use_china_cdn_summary">Включать только китайские серверы Steam. По умолчанию выключено.</string>
 </resources>

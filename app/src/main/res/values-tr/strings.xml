@@ -2540,4 +2540,16 @@ Yüklü konum:
     <string name="settings_frame_generation_updated">%1$s kaynağından güncellendi.</string>
     <string name="settings_frame_generation_not_owned">Kare üretimi Lossless Scaling gölgelendiricilerini kullanır. Bunu etkinleştirmek için oturum açmış hesapla Steam\'den satın alın.</string>
     <string name="settings_frame_generation_locate">Lossless.dll seç…</string>
+    <string name="settings_other_download_source_title">İndirme kaynağı (GitHub aynası)</string>
+    <string name="settings_other_download_source_default">GitHub (varsayılan)</string>
+    <string name="settings_other_download_source_message">Bileşenleri Çin GitHub hızlandırıcısı (örn. gh-proxy.com) üzerinden indirmek için açın. Çalışan bir proxy girin; sonuç {proxy}/https://github.com/... şeklindedir. Kapalı = doğrudan GitHub.</string>
+    <string name="settings_other_download_source_hint">GitHub proxy temel URL\'si</string>
+    <string name="setup_wizard_mirror">Ayna</string>
+    <string name="containers_set_default">Varsayılan yap</string>
+    <string name="containers_default_badge">Varsayılan</string>
+    <string name="containers_set_default_success">%1$s kapsayıcısı yeni oyunlar için varsayılan yapıldı. Mevcut oyunlar etkilenmez.</string>
+    <string name="container_config_arch_x86_64">x86-64</string>
+    <string name="container_config_arch_arm64">ARM64EC</string>
+    <string name="steam_download_use_china_cdn">Steam Çin CDN</string>
+    <string name="steam_download_use_china_cdn_summary">Yalnızca-Çin Steam sunucularını dahil et. Varsayılan olarak kapalı.</string>
 </resources>

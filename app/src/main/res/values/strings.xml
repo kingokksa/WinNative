@@ -1219,8 +1219,6 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="settings_debug_wine_channels_summary">Choose which Wine channels are included when Wine debug logging is enabled.</string>
     <string name="settings_debug_wine_classes_title">Wine Log Levels</string>
     <string name="settings_debug_wine_classes_summary">Pick which message types are logged. Trace is extremely verbose.</string>
-    <string name="settings_debug_app_log_level_title">Application Log Level</string>
-    <string name="settings_debug_app_log_level_summary">Verbosity of the app logcat capture (application.log). D keeps debug+ timing lines.</string>
     <string name="settings_debug_input_logs">Input Logs</string>
     <string name="settings_debug_input_logs_description">Log gamepad, touch, and keyboard input events</string>
     <string name="settings_debug_download_logs">Download Logs</string>
