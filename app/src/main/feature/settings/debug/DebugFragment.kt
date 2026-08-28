@@ -87,10 +87,15 @@ class DebugFragment : Fragment() {
                             },
                             onAppLogLevelChanged = { level ->
                                 preferences.edit { putString("app_log_level", level) }
-                                // Restart capture so the new level takes effect immediately.
+                                // Restart capture off the main thread so the logcat exec (and its
+                                // waitFor) can never ANR/crash the settings UI.
                                 if (preferences.getBoolean("enable_app_debug", false)) {
-                                    com.winlator.cmod.runtime.system.LogManager
-                                        .startAppLogging(ctx, reset = true)
+                                    runCatching {
+                                        Thread {
+                                            com.winlator.cmod.runtime.system.LogManager
+                                                .startAppLogging(ctx, reset = true)
+                                        }.start()
+                                    }
                                 }
                                 refresh()
                             },
