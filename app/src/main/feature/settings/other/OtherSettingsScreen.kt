@@ -49,6 +49,7 @@ import androidx.compose.material.icons.outlined.OpenInBrowser
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.SportsEsports
+import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Tune
@@ -119,6 +120,7 @@ private val Error = Color(0xFFFF4444)
 // State
 data class OtherSettingsState(
     val checkForUpdates: Boolean = true,
+    val updateChannelIndex: Int = 0,
     val useChinaMirror: Boolean = false,
     val chinaMirrorBase: String = com.winlator.cmod.shared.io.DownloadSource.DEFAULT_CHINA_MIRROR_BASE,
     val languageLabels: List<String> = emptyList(),
@@ -168,6 +170,7 @@ fun OtherSettingsScreen(
     state: OtherSettingsState,
     onCheckForUpdatesChanged: (Boolean) -> Unit,
     onCheckForUpdatesNow: () -> Unit,
+    onUpdateChannelSelected: (Int) -> Unit,
     onChinaMirrorChanged: (Boolean) -> Unit,
     onChinaMirrorBaseChanged: (String) -> Unit,
     onLanguageSelected: (Int) -> Unit,
@@ -236,6 +239,19 @@ fun OtherSettingsScreen(
                 checked = state.checkForUpdates,
                 onCheckedChange = onCheckForUpdatesChanged,
                 onCheckNow = onCheckForUpdatesNow,
+            )
+
+            SettingsDropdownCard(
+                title = stringResource(R.string.settings_general_update_channel),
+                subtitle = stringResource(R.string.settings_general_update_channel_summary),
+                icon = Icons.Outlined.Sync,
+                options =
+                    listOf(
+                        stringResource(R.string.update_channel_official),
+                        stringResource(R.string.update_channel_development),
+                    ),
+                selectedIndex = state.updateChannelIndex,
+                onOptionSelected = onUpdateChannelSelected,
             )
 
             SettingsDropdownCard(
