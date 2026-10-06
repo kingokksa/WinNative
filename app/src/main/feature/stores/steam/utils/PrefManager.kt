@@ -181,6 +181,13 @@ object PrefManager {
             setBoolean("wn_plan_w", value)
         }
 
+
+    var wnSteamAgent32: Boolean
+        get() = getBoolean("wn_steam_agent_32", true)
+        set(value) {
+            setBoolean("wn_steam_agent_32", value)
+        }
+
     var cellId: Int
         get() = getInt("cell_id", 0)
         set(value) {
@@ -345,6 +352,12 @@ object PrefManager {
         get() = getString("itch_download_folder", "")
         set(value) {
             setString("itch_download_folder", value)
+        }
+
+    var externalDrivesJson: String
+        get() = getString("external_drives_json", "")
+        set(value) {
+            setString("external_drives_json", value)
         }
 
     var chatServiceEnabled: Boolean
