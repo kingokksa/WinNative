@@ -18,7 +18,6 @@ import com.winlator.cmod.shared.util.OnExtractFileListener;
 import java.io.File;
 import java.io.RandomAccessFile;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -219,6 +218,37 @@ public class ContainerManager {
               removeContainer(container);
               handler.post(callback);
             });
+  }
+
+  /**
+   * A container without a Wine prefix, for the GameScope runtime: its sessions never start Wine,
+   * so it only holds settings and library entries and needs no Wine or Proton to be installed.
+   */
+  public Container createPrefixlessContainer(JSONObject data) {
+    try {
+      int id = maxContainerId + 1;
+      File containerDir = new File(homeDir, ImageFs.USER + "-" + id);
+      while (containerDir.exists()) {
+        id++;
+        containerDir = new File(homeDir, ImageFs.USER + "-" + id);
+      }
+      data.put("id", id);
+      Container container = new Container(id, this);
+      container.setRootDir(containerDir);
+      container.loadData(data);
+      File desktopDir = container.getDesktopDir();
+      if (!desktopDir.isDirectory() && !desktopDir.mkdirs()) {
+        FileUtils.delete(containerDir);
+        return null;
+      }
+      container.saveData();
+      maxContainerId = Math.max(maxContainerId, id);
+      containers.add(container);
+      return container;
+    } catch (Throwable e) {
+      Log.e("ContainerManager", "Error creating prefixless container", e);
+    }
+    return null;
   }
 
   public Container createContainer(JSONObject data, ContentsManager contentsManager) {
@@ -453,8 +483,7 @@ public class ContainerManager {
     ArrayList<Shortcut> shortcuts = new ArrayList<>();
     for (Container container : containers) {
       File desktopDir = container.getDesktopDir();
-      ArrayList<File> files = new ArrayList<>();
-      if (desktopDir.exists()) files.addAll(Arrays.asList(desktopDir.listFiles()));
+      File[] files = desktopDir.listFiles();
       if (files != null) {
         for (File file : files) {
           String fileName = file.getName();

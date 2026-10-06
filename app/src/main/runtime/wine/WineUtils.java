@@ -637,8 +637,8 @@ public abstract class WineUtils {
     if (isSymlink(steamworksCommonRedist)) {
       FileUtils.delete(steamworksCommonRedist);
     }
-    if (gameCommonRedist.exists() && gameCommonRedist.isDirectory()) {
-      FileUtils.copy(gameCommonRedist, steamworksCommonRedist);
+    if (gameCommonRedist.isDirectory()) {
+      syncDirectoryIfChanged(gameCommonRedist, steamworksCommonRedist);
     } else if (!steamworksCommonRedist.exists()) {
       steamworksCommonRedist.mkdirs();
     }
@@ -648,6 +648,27 @@ public abstract class WineUtils {
         new File(container.getRootDir(), ".wine/drive_c/Program Files (x86)/Steam/steamapps");
     if (!steamappsDir.exists()) {
       steamappsDir.mkdirs();
+    }
+  }
+
+  private static void syncDirectoryIfChanged(File source, File destination) {
+    if (isSymlink(source)) return;
+    if (source.isDirectory()) {
+      if (!destination.isDirectory() && !destination.mkdirs()) return;
+      String[] names = source.list();
+      if (names == null) return;
+      for (String name : names) {
+        syncDirectoryIfChanged(new File(source, name), new File(destination, name));
+      }
+      return;
+    }
+    if (destination.isFile()
+        && destination.length() == source.length()
+        && destination.lastModified() == source.lastModified()) {
+      return;
+    }
+    if (FileUtils.copy(source, destination)) {
+      destination.setLastModified(source.lastModified());
     }
   }
 
@@ -931,6 +952,9 @@ public abstract class WineUtils {
 
   private static boolean seedVcRedistBatched(
       File systemRegFile, String[] runtimeArches, boolean isArm64EC) {
+    java.util.concurrent.locks.ReentrantLock registryLock =
+        WineRegistryEditor.lockFor(systemRegFile);
+    registryLock.lock();
     File temp = null;
     try {
       String block = buildVcRedistRegBlock(runtimeArches, isArm64EC);
@@ -956,6 +980,7 @@ public abstract class WineUtils {
       return false;
     } finally {
       if (temp != null && temp.exists()) temp.delete();
+      registryLock.unlock();
     }
   }
 
@@ -1072,8 +1097,8 @@ public abstract class WineUtils {
           registryEditor.removeKey(
               "Software\\Classes\\CLSID\\{083863F1-70DE-11D0-BD40-00A0C911CE86}\\Instance\\{E30629D1-27E5-11CE-875D-00608CB78066}");
         }
-        registryEditor.close();
       } finally {
+        registryEditor.close();
       }
     } else if (identifier.equals("xaudio")) {
       registryEditor = new WineRegistryEditor(systemRegFile);
@@ -1401,8 +1426,8 @@ public abstract class WineUtils {
               null,
               "C:\\windows\\system32\\xaudio2_2.dll");
         }
-        registryEditor.close();
       } finally {
+        registryEditor.close();
       }
     }
   }
@@ -1519,8 +1544,8 @@ public abstract class WineUtils {
         registryEditor.setDwordValue("System\\ControlSet001\\Services\\" + name, "Start", value);
         registryEditor.setDwordValue("System\\ControlSet002\\Services\\" + name, "Start", value);
       }
-      registryEditor.close();
     } finally {
+      registryEditor.close();
     }
   }
 

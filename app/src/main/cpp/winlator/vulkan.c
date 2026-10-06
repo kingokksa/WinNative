@@ -23,6 +23,26 @@ PFN_vkDestroyInstance destroyInstance;
 
 static void *vulkan_handle = NULL;
 
+static void destroy_probe_instance(void) {
+  if (instance != VK_NULL_HANDLE) {
+    PFN_vkDestroyInstance destroy = destroyInstance;
+    if (destroy == NULL && vulkan_handle != NULL) {
+      destroy = (PFN_vkDestroyInstance)dlsym(vulkan_handle, "vkDestroyInstance");
+    }
+    if (destroy != NULL) destroy(instance, NULL);
+  }
+  instance = VK_NULL_HANDLE;
+  physicalDevice = VK_NULL_HANDLE;
+  getPhysicalDeviceProperties = NULL;
+  enumerateDeviceExtensionProperties = NULL;
+  enumeratePhysicalDevices = NULL;
+  destroyInstance = NULL;
+  if (vulkan_handle) {
+    dlclose(vulkan_handle);
+    vulkan_handle = NULL;
+  }
+}
+
 static char *get_native_library_dir(JNIEnv *env, jobject context) {
   char *native_libdir = NULL;
 
@@ -51,8 +71,13 @@ static char *get_native_library_dir(JNIEnv *env, jobject context) {
     return NULL;
   }
 
-  if (nativeLibDir)
-    native_libdir = (char *)(*env)->GetStringUTFChars(env, nativeLibDir, NULL);
+  if (nativeLibDir) {
+    const char *utf = (*env)->GetStringUTFChars(env, nativeLibDir, NULL);
+    if (utf) {
+      native_libdir = strdup(utf);
+      (*env)->ReleaseStringUTFChars(env, nativeLibDir, utf);
+    }
+  }
 
   return native_libdir;
 }
@@ -163,8 +188,13 @@ static char *get_library_name(JNIEnv *env, jobject context,
     return NULL;
   }
 
-  if (libraryName)
-    library_name = (char *)(*env)->GetStringUTFChars(env, libraryName, NULL);
+  if (libraryName) {
+    const char *utf = (*env)->GetStringUTFChars(env, libraryName, NULL);
+    if (utf) {
+      library_name = strdup(utf);
+      (*env)->ReleaseStringUTFChars(env, libraryName, utf);
+    }
+  }
 
   return library_name;
 }
@@ -206,26 +236,29 @@ void *winlator_open_vulkan(JNIEnv *env, jobject context, const char *driver_name
 
   preload_vendor_icd_deps();
 
-  const char *driver_path = get_driver_path(env, context, driver_name);
+  char *driver_path = get_driver_path(env, context, driver_name);
   if (!driver_path || access(driver_path, F_OK) != 0) {
+    free(driver_path);
     return winlator_open_system_vulkan();
   }
 
   char *library_name = get_library_name(env, context, driver_name);
   char *native_library_dir = get_native_library_dir(env, context);
-  if (!library_name || !native_library_dir) {
-    return winlator_open_system_vulkan();
-  }
-
   char *tmpdir = NULL;
-  asprintf(&tmpdir, "%s%s", driver_path, "temp");
-  mkdir(tmpdir, S_IRWXU | S_IRWXG);
-
-  void *handle = adrenotools_open_libvulkan(
-      RTLD_LOCAL | RTLD_NOW,
-      ADRENOTOOLS_DRIVER_CUSTOM, tmpdir,
-      native_library_dir, driver_path, library_name, NULL,
-      NULL);
+  void *handle = NULL;
+  if (library_name && native_library_dir) {
+    asprintf(&tmpdir, "%s%s", driver_path, "temp");
+    mkdir(tmpdir, S_IRWXU | S_IRWXG);
+    handle = adrenotools_open_libvulkan(
+        RTLD_LOCAL | RTLD_NOW,
+        ADRENOTOOLS_DRIVER_CUSTOM, tmpdir,
+        native_library_dir, driver_path, library_name, NULL,
+        NULL);
+  }
+  free(tmpdir);
+  free(native_library_dir);
+  free(library_name);
+  free(driver_path);
   if (!handle) return winlator_open_system_vulkan();
   return handle;
 }
@@ -242,15 +275,18 @@ static VkResult create_instance(jstring driverName, JNIEnv *env,
                                 jobject context) {
   VkResult result;
   VkInstanceCreateInfo create_info = {};
-  char *driver_name = NULL;
+  const char *driver_name = NULL;
 
   if (driverName != NULL)
-    driver_name = (char *)(*env)->GetStringUTFChars(env, driverName, NULL);
+    driver_name = (*env)->GetStringUTFChars(env, driverName, NULL);
 
   if (driver_name && strcmp(driver_name, "System"))
     init_vulkan(env, context, driver_name);
   else
     init_original_vulkan();
+
+  if (driver_name)
+    (*env)->ReleaseStringUTFChars(env, driverName, driver_name);
 
   if (!vulkan_handle)
     return VK_ERROR_INITIALIZATION_FAILED;
@@ -340,18 +376,20 @@ static VkResult enumerate_physical_devices() {
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_winlator_cmod_runtime_system_GPUInformation_getVulkanVersion(
+Java_com_winlator_cmod_runtime_system_GPUInformation_getVulkanVersionNative(
     JNIEnv *env, jclass obj, jstring driverName, jobject context) {
   VkPhysicalDeviceProperties props = {};
   char *driverVersion;
 
   if (create_instance(driverName, env, context) != VK_SUCCESS) {
     printf("Failed to create instance");
+    destroy_probe_instance();
     return (*env)->NewStringUTF(env, "Unknown");
   }
 
   if (enumerate_physical_devices() != VK_SUCCESS) {
     printf("Failed to query physical devices");
+    destroy_probe_instance();
     return (*env)->NewStringUTF(env, "Unknown");
   }
 
@@ -365,75 +403,64 @@ Java_com_winlator_cmod_runtime_system_GPUInformation_getVulkanVersion(
   jstring result = (*env)->NewStringUTF(env, driverVersion);
   free(driverVersion);
 
-  destroyInstance(instance, NULL);
-
-  if (vulkan_handle) {
-    dlclose(vulkan_handle);
-    vulkan_handle = NULL;
-  }
+  destroy_probe_instance();
 
   return result;
 }
 
 JNIEXPORT jint JNICALL
-Java_com_winlator_cmod_runtime_system_GPUInformation_getVendorID(
+Java_com_winlator_cmod_runtime_system_GPUInformation_getVendorIDNative(
     JNIEnv *env, jclass obj, jstring driverName, jobject context) {
   VkPhysicalDeviceProperties props = {};
   uint32_t vendorID;
 
   if (create_instance(driverName, env, context) != VK_SUCCESS) {
     printf("Failed to create instance");
+    destroy_probe_instance();
     return 0;
   }
 
   if (enumerate_physical_devices() != VK_SUCCESS) {
     printf("Failed to query physical devices");
+    destroy_probe_instance();
     return 0;
   }
 
   getPhysicalDeviceProperties(physicalDevice, &props);
   vendorID = props.vendorID;
 
-  destroyInstance(instance, NULL);
-
-  if (vulkan_handle) {
-    dlclose(vulkan_handle);
-    vulkan_handle = NULL;
-  }
+  destroy_probe_instance();
 
   return vendorID;
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_winlator_cmod_runtime_system_GPUInformation_getRenderer(
+Java_com_winlator_cmod_runtime_system_GPUInformation_getRendererNative(
     JNIEnv *env, jclass obj, jstring driverName, jobject context) {
   VkPhysicalDeviceProperties props = {};
 
   if (create_instance(driverName, env, context) != VK_SUCCESS) {
     printf("Failed to create instance");
+    destroy_probe_instance();
     return (*env)->NewStringUTF(env, "Unknown");
   }
 
   if (enumerate_physical_devices() != VK_SUCCESS) {
     printf("Failed to query physical devices");
+    destroy_probe_instance();
     return (*env)->NewStringUTF(env, "Unknown");
   }
 
   getPhysicalDeviceProperties(physicalDevice, &props);
   jstring result = (*env)->NewStringUTF(env, props.deviceName);
 
-  destroyInstance(instance, NULL);
-
-  if (vulkan_handle) {
-    dlclose(vulkan_handle);
-    vulkan_handle = NULL;
-  }
+  destroy_probe_instance();
 
   return result;
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_com_winlator_cmod_runtime_system_GPUInformation_enumerateExtensions(
+Java_com_winlator_cmod_runtime_system_GPUInformation_enumerateExtensionsNative(
     JNIEnv *env, jclass obj, jstring driverName, jobject context) {
   jobjectArray extensions;
   VkResult result;
@@ -442,11 +469,13 @@ Java_com_winlator_cmod_runtime_system_GPUInformation_enumerateExtensions(
 
   if (create_instance(driverName, env, context) != VK_SUCCESS) {
     printf("Failed to create instance");
+    destroy_probe_instance();
     return (*env)->NewObjectArray(env, 0, stringClass, NULL);
   }
 
   if (enumerate_physical_devices() != VK_SUCCESS) {
     printf("Failed to query physical devices");
+    destroy_probe_instance();
     return (*env)->NewObjectArray(env, 0, stringClass, NULL);
   }
 
@@ -455,6 +484,7 @@ Java_com_winlator_cmod_runtime_system_GPUInformation_enumerateExtensions(
 
   if (result != VK_SUCCESS || extensionCount < 1) {
     printf("Failed to query extension count");
+    destroy_probe_instance();
     return (*env)->NewObjectArray(env, 0, stringClass, NULL);
   }
 
@@ -462,6 +492,7 @@ Java_com_winlator_cmod_runtime_system_GPUInformation_enumerateExtensions(
       malloc(sizeof(VkExtensionProperties) * extensionCount);
   if (!extensionProperties) {
     printf("Failed to allocate extension properties");
+    destroy_probe_instance();
     return (*env)->NewObjectArray(env, 0, stringClass, NULL);
   }
 
@@ -471,6 +502,7 @@ Java_com_winlator_cmod_runtime_system_GPUInformation_enumerateExtensions(
   if (result != VK_SUCCESS) {
     printf("Failed to query extensions (result=%d)", result);
     free(extensionProperties);
+    destroy_probe_instance();
     return (*env)->NewObjectArray(env, 0, stringClass, NULL);
   }
 
@@ -485,12 +517,7 @@ Java_com_winlator_cmod_runtime_system_GPUInformation_enumerateExtensions(
 
   free(extensionProperties);
 
-  destroyInstance(instance, NULL);
-
-  if (vulkan_handle) {
-    dlclose(vulkan_handle);
-    vulkan_handle = NULL;
-  }
+  destroy_probe_instance();
 
   return extensions;
 }
