@@ -279,6 +279,8 @@ fun ContainersScreen(
                                                     onInstallComponents = null,
                                                     onRemove = { onRemoveContainer(gamescope) },
                                                     onShowInfo = { onShowInfo(gamescope) },
+                                                    defaultArchLabel = null,
+                                                    onSetDefault = null,
                                                 )
                                             }
                                         }
@@ -476,7 +478,7 @@ private fun ContainerCard(
     onRemove: () -> Unit,
     onShowInfo: () -> Unit,
     defaultArchLabel: String?,
-    onSetDefault: () -> Unit,
+    onSetDefault: (() -> Unit)?,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val nameFontSize =
@@ -540,13 +542,15 @@ private fun ContainerCard(
                             },
                         )
                     }
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.containers_set_default), color = ContainersTextPrimary) },
-                        onClick = {
-                            menuExpanded = false
-                            onSetDefault()
-                        },
-                    )
+                    if (onSetDefault != null) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.containers_set_default), color = ContainersTextPrimary) },
+                            onClick = {
+                                menuExpanded = false
+                                onSetDefault()
+                            },
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.container_config_storage_info), color = ContainersTextPrimary) },
                         onClick = {
