@@ -260,8 +260,7 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
         ): Container? {
             val contentsManager = ContentsManager(context)
             contentsManager.syncContents()
-            // Single unified default container. 0 means unset (RETRO_CONTAINER_ID is 0),
-            // so guard the lookup with id > 0.
+            // 0 means unset (RETRO_CONTAINER_ID is 0).
             val defaultId = getDefaultContainerId(context)
             if (defaultId > 0) {
                 containerManager.getContainerById(defaultId)?.let {
@@ -271,12 +270,7 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
             return containerManager.containers.firstOrNull { isContainerUsable(contentsManager, it) }
         }
 
-        /**
-         * Returns the single default container id. Falls back to the legacy
-         * per-architecture keys (default_x86_container_id, then
-         * default_arm64_container_id) so users who set a default before the
-         * unified key existed keep their choice.
-         */
+        /** Falls back to the legacy per-architecture keys so pre-unified defaults survive. */
         @JvmStatic
         fun getDefaultContainerId(context: Context): Int {
             val unified = prefs(context).getInt(KEY_DEFAULT_CONTAINER_ID, 0)
@@ -3152,8 +3146,7 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                         withContext(Dispatchers.IO) {
                             try {
                                 val c = ensureContainerForProfile(profile, displayName)
-                                // The wizard does not auto-assign a default container on
-                                // creation; the user picks one by tapping the card.
+                                // Wizard does not auto-assign; the user taps the card.
                                 c
                             } catch (e: Exception) {
                                 updateWizardError("Container creation failed: ${e.message}")
@@ -3238,7 +3231,6 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                     if (hasContainer) {
                         Spacer(Modifier.width(6.dp))
                         if (isDefault) {
-                            // Default badge — no tap needed, this container is the default.
                             Box(
                                 modifier =
                                     Modifier
@@ -3260,7 +3252,6 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                                 )
                             }
                         } else {
-                            // Tap to make this container the unified default.
                             Text(
                                 text = stringResource(R.string.containers_set_default),
                                 color = turquoise,
