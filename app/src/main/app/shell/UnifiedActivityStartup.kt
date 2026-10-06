@@ -184,6 +184,7 @@ import com.winlator.cmod.feature.stores.gog.service.GOGAuthManager
 import com.winlator.cmod.feature.stores.gog.service.GOGConstants
 import com.winlator.cmod.feature.stores.gog.service.GOGManifestSizes
 import com.winlator.cmod.feature.stores.gog.service.GOGService
+import com.winlator.cmod.feature.stores.itch.service.ItchService
 import com.winlator.cmod.feature.stores.gog.service.GOGUpdateInfo
 import com.winlator.cmod.feature.stores.gog.ui.auth.GOGOAuthActivity
 import com.winlator.cmod.feature.stores.steam.SteamLoginActivity
@@ -200,6 +201,9 @@ import com.winlator.cmod.feature.sync.CloudSyncHelper
 import com.winlator.cmod.feature.sync.google.CloudSyncManager
 import com.winlator.cmod.feature.sync.google.GameSaveBackupManager
 import com.winlator.cmod.feature.sync.ui.CloudSavesContent
+import com.winlator.cmod.feature.library.LinuxApps
+import com.winlator.cmod.feature.library.LinuxSteamLibrary
+import com.winlator.cmod.runtime.linux.LinuxRuntime
 import com.winlator.cmod.runtime.container.ContainerManager
 import com.winlator.cmod.runtime.container.Shortcut
 import com.winlator.cmod.runtime.display.XServerDisplayActivity
@@ -406,6 +410,14 @@ internal fun UnifiedActivity.bootstrapStartupState() {
 
     lifecycleScope.launch(Dispatchers.IO) {
         val appContext = applicationContext
+        // The Steam entry's artwork is redrawn here as well as at container creation, so an
+        // install made by an earlier build picks up the current one.
+        runCatching {
+            if (LinuxRuntime.isInstalled(appContext)) {
+                LinuxApps.gamescopeContainer(ContainerManager(appContext))?.let { LinuxApps.ensureSteamShortcut(appContext, it) }
+                LinuxSteamLibrary.adoptClientInstalls(appContext, LinuxRuntime.rootDir(appContext))
+            }
+        }.onFailure { Log.w("UnifiedActivity", "Could not refresh the Steam entries", it) }
         val resolvedLayoutMode =
             runCatching {
                 PrefManager.init(appContext)
@@ -418,8 +430,13 @@ internal fun UnifiedActivity.bootstrapStartupState() {
         val resolvedStoreVisible =
             runCatching {
                 val saved = PrefManager.libraryStoreVisible.split(",").toSet()
-                mapOf("steam" to ("steam" in saved), "epic" to ("epic" in saved), "gog" to ("gog" in saved))
-            }.getOrElse { mapOf("steam" to true, "epic" to true, "gog" to true) }
+                mapOf(
+                    "steam" to ("steam" in saved),
+                    "epic" to ("epic" in saved),
+                    "gog" to ("gog" in saved),
+                    "itch" to ("itch" in saved),
+                )
+            }.getOrElse { mapOf("steam" to true, "epic" to true, "gog" to true, "itch" to true) }
 
         val resolvedContentFilters =
             runCatching {
@@ -438,6 +455,8 @@ internal fun UnifiedActivity.bootstrapStartupState() {
             .onFailure { Log.w("UnifiedActivity", "Epic auth warmup failed", it) }
         runCatching { GOGAuthManager.updateLoginStatus(appContext) }
             .onFailure { Log.w("UnifiedActivity", "GOG auth warmup failed", it) }
+        runCatching { ItchService.start(appContext) }
+            .onFailure { Log.w("UnifiedActivity", "itch.io service warmup failed", it) }
         runCatching { SteamService.initLoginStatus(appContext) }
             .onFailure { Log.w("UnifiedActivity", "Steam auth warmup failed", it) }
 
@@ -506,6 +525,7 @@ internal fun UnifiedActivity.buildTabs(storeVisible: Map<String, Boolean>): List
     if (storeVisible["steam"] != false) base.add(TabDef("Steam", "steam"))
     if (storeVisible["epic"] != false) base.add(TabDef("Epic", "epic"))
     if (storeVisible["gog"] != false) base.add(TabDef("GOG", "gog"))
+    if (storeVisible["itch"] != false) base.add(TabDef("itch.io", "itch"))
     return base
 }
 

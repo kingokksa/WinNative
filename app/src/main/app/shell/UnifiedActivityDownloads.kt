@@ -243,6 +243,7 @@ import com.winlator.cmod.shared.theme.WinNativeTheme
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.Lazy
 import com.winlator.cmod.feature.stores.steam.enums.EPersonaState
+import com.winlator.cmod.shared.ui.layout.isCompactWidth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -254,6 +255,8 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 // Downloads tab + queue/progress UI + game/workshop managers, split out of UnifiedActivity.kt (behavior-identical).
+
+private const val LIVE_PROGRESS_TICK_MS = 250L
 
 // Downloads Tab
 @Composable
@@ -315,6 +318,16 @@ internal fun UnifiedActivity.DownloadsTab(
     LaunchedEffect(syncDownloads) {
         DownloadCoordinator.changes.collect {
             latestSyncDownloads()
+        }
+    }
+
+    val hasLiveTransfer = downloads.any { (_, info) -> info.isActive() }
+
+    LaunchedEffect(hasLiveTransfer) {
+        if (!hasLiveTransfer) return@LaunchedEffect
+        while (true) {
+            delay(LIVE_PROGRESS_TICK_MS)
+            tick++
         }
     }
 
@@ -599,7 +612,10 @@ internal fun UnifiedActivity.DownloadsQueueButton(
         modifier =
             modifier
                 .height(40.dp)
-                .widthIn(min = 96.dp)
+                // Three of these at a 96 dp minimum plus their gaps come to 308 dp against
+                // 328 dp of usable width on a 360 dp phone — one longer label and the outer
+                // buttons leave the screen. Let them size to their text there.
+                .widthIn(min = if (isCompactWidth()) 0.dp else 96.dp)
                 .paneNavItem(cornerRadius = 8.dp, onActivate = { if (enabled) onClick() }),
         colors =
             ButtonDefaults.buttonColors(
@@ -1026,6 +1042,7 @@ internal fun UnifiedActivity.DownloadItemDeck(
     val isSteam = id.startsWith("STEAM_")
     val isEpic = id.startsWith("EPIC_")
     val isGog = id.startsWith("GOG_")
+    val isItch = id.startsWith("ITCH_")
     val appId =
         if (isSteam) {
             id.removePrefix("STEAM_").toIntOrNull() ?: 0
@@ -1035,10 +1052,14 @@ internal fun UnifiedActivity.DownloadItemDeck(
             0
         }
     val gogId = if (isGog) id.removePrefix("GOG_") else ""
+    val itchId = if (isItch) id.removePrefix("ITCH_").toIntOrNull() ?: 0 else 0
 
     var steamApp by remember(appId) { mutableStateOf<SteamApp?>(null) }
     var epicGame by remember(appId) { mutableStateOf<EpicGame?>(null) }
     var gogGame by remember(gogId) { mutableStateOf<GOGGame?>(null) }
+    var itchGame by remember(itchId) {
+        mutableStateOf<com.winlator.cmod.feature.stores.itch.service.ItchInstalledGame?>(null)
+    }
     val context = LocalContext.current
     val clickInteractionSource = remember { MutableInteractionSource() }
     val animatedProgress by animateFloatAsState(
@@ -1060,7 +1081,7 @@ internal fun UnifiedActivity.DownloadItemDeck(
         previousStatus = status
     }
 
-    LaunchedEffect(appId, gogId, isSteam, isEpic, isGog) {
+    LaunchedEffect(appId, gogId, itchId, isSteam, isEpic, isGog, isItch) {
         withContext(Dispatchers.IO) {
             if (isSteam) {
                 steamApp = db.steamAppDao().findApp(appId)
@@ -1068,6 +1089,10 @@ internal fun UnifiedActivity.DownloadItemDeck(
                 epicGame = EpicService.getEpicGameOf(appId)
             } else if (isGog) {
                 gogGame = GOGService.getGOGGameOf(gogId)
+            } else if (isItch) {
+                itchGame =
+                    com.winlator.cmod.feature.stores.itch.service.ItchLibrary
+                        .find(context, itchId)
             }
         }
     }
@@ -1080,6 +1105,8 @@ internal fun UnifiedActivity.DownloadItemDeck(
             epicGame?.title
         } else if (isGog) {
             gogGame?.title
+        } else if (isItch) {
+            itchGame?.title ?: unknownGameLabel
         } else {
             unknownGameLabel
         }
@@ -1090,9 +1117,13 @@ internal fun UnifiedActivity.DownloadItemDeck(
             epicGame?.primaryImageUrl ?: epicGame?.iconUrl
         } else if (isGog) {
             gogGame?.imageUrl ?: gogGame?.iconUrl
+        } else if (isItch) {
+            itchGame?.coverUrl
         } else {
             null
         }
+
+    val compactDownloadRow = isCompactWidth()
 
     Surface(
         color = if (isSelected) DownloadCardSelectedBlack else DownloadCardBlack,
@@ -1131,7 +1162,12 @@ internal fun UnifiedActivity.DownloadItemDeck(
                         .crossfade(300)
                         .build(),
                 contentDescription = null,
-                modifier = Modifier.size(120.dp, 68.dp).clip(RoundedCornerShape(4.dp)),
+                // 120 dp is about a third of the usable row width on a phone, which is what
+                // starves the name/size/speed columns beside it.
+                modifier =
+                    Modifier
+                        .size(if (compactDownloadRow) 88.dp else 120.dp, if (compactDownloadRow) 50.dp else 68.dp)
+                        .clip(RoundedCornerShape(4.dp)),
                 contentScale = ContentScale.Crop,
             )
 
@@ -1147,6 +1183,12 @@ internal fun UnifiedActivity.DownloadItemDeck(
                         progress < 1f &&
                         speed > 0
 
+                val sizeLabel =
+                    "${StorageUtils.formatDecimalSize(downloadedBytes)} / ${StorageUtils.formatDecimalSize(totalBytes)}"
+                // Three equal weights next to the thumbnail leave about 69 dp each on a phone,
+                // so the size string clips and the game name ellipsizes to a few characters.
+                // Below the compact threshold the name keeps the first line to itself and the
+                // size and speed share a second one.
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Text(
                         displayName ?: unknownGameLabel,
@@ -1157,22 +1199,46 @@ internal fun UnifiedActivity.DownloadItemDeck(
                         overflow = TextOverflow.Ellipsis,
                     )
 
-                    // Centered Size Info
-                    Text(
-                        text = "${StorageUtils.formatDecimalSize(downloadedBytes)} / ${StorageUtils.formatDecimalSize(totalBytes)}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = TextSecondary,
-                        modifier = Modifier.weight(1f),
-                        textAlign = TextAlign.Center,
-                    )
+                    if (!compactDownloadRow) {
+                        // Centered Size Info
+                        Text(
+                            text = sizeLabel,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = TextSecondary,
+                            modifier = Modifier.weight(1f),
+                            textAlign = TextAlign.Center,
+                        )
 
-                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+                        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+                            if (showDownloadSpeed) {
+                                Text(
+                                    text = StorageUtils.formatBitsPerSecond(speed),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = Accent,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                        }
+                    }
+                }
+                if (compactDownloadRow) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = sizeLabel,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = TextSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        Spacer(Modifier.weight(1f))
                         if (showDownloadSpeed) {
                             Text(
                                 text = StorageUtils.formatBitsPerSecond(speed),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = Accent,
                                 fontWeight = FontWeight.Bold,
+                                maxLines = 1,
                             )
                         }
                     }
@@ -1358,6 +1424,7 @@ internal fun UnifiedActivity.GameManagerDialog(
     val selectedDlcIds = remember { mutableStateListOf<Int>() }
     var customPath by remember { mutableStateOf<String?>(null) }
     var showCustomPathWarning by remember { mutableStateOf(false) }
+    var showDownloadTarget by remember(app.id) { mutableStateOf(false) }
     var isCheckingForUpdate by remember(app.id) { mutableStateOf(false) }
     var isUpdateCheckCoolingDown by remember(app.id) { mutableStateOf(false) }
     var showWorkshopDialog by remember(app.id) { mutableStateOf(false) }
@@ -1501,6 +1568,16 @@ internal fun UnifiedActivity.GameManagerDialog(
             else -> stringResource(R.string.common_ui_custom)
         }
     val isReallyInstalled = installed == true
+    val externalStorageState by com.winlator.cmod.feature.storage.ExternalStorage.state.collectAsState()
+    val externalDrive = externalStorageState.preferredDrive()
+    val externalInstallRoot =
+        externalDrive?.let {
+            com.winlator.cmod.feature.storage.ExternalStorage
+                .storeInstallRoot(
+                    it.drive.downloadPath,
+                    com.winlator.cmod.feature.stores.common.InstallStore.STEAM,
+                )
+        }
     val steamDownloadRecord =
         downloadRecords.firstOrNull {
             it.store == com.winlator.cmod.app.db.download.DownloadRecord.STORE_STEAM &&
@@ -1528,6 +1605,37 @@ internal fun UnifiedActivity.GameManagerDialog(
     val noUpdateAvailableText = stringResource(R.string.store_game_no_update_available)
     val updateAvailableText = stringResource(R.string.store_game_update_available)
     val updateFailedText = stringResource(R.string.store_game_update_check_failed)
+
+    val startSteamInstall: (com.winlator.cmod.feature.storage.DownloadTarget) -> Unit = { target ->
+        val requestedPath =
+            if (target == com.winlator.cmod.feature.storage.DownloadTarget.EXTERNAL) {
+                externalInstallRoot ?: customPath
+            } else {
+                customPath
+            }
+        context.runIfOnlineOrToast {
+            scope.launch(Dispatchers.IO) {
+                val installableDlcIds = dlcItems
+                    .filter { !it.isInstalled && it.id in selectedDlcIds }
+                    .map { it.id }
+                SteamService.downloadApp(app.id, installableDlcIds, false, requestedPath)
+                withContext(Dispatchers.Main) { onDismissRequest() }
+            }
+        }
+    }
+
+    if (showDownloadTarget) {
+        com.winlator.cmod.feature.storage.DownloadTargetDialog(
+            internalPath = installPathDisplay,
+            externalPath = externalInstallRoot,
+            externalLabel = externalDrive?.drive?.label.orEmpty(),
+            onDismiss = { showDownloadTarget = false },
+            onConfirm = { target ->
+                showDownloadTarget = false
+                startSteamInstall(target)
+            },
+        )
+    }
 
     Dialog(
         onDismissRequest = onDismissRequest,
@@ -1621,14 +1729,10 @@ internal fun UnifiedActivity.GameManagerDialog(
                         )
                         return@StoreGameDetailScreen
                     }
-                    context.runIfOnlineOrToast {
-                        scope.launch(Dispatchers.IO) {
-                            val installableDlcIds = dlcItems
-                                .filter { !it.isInstalled && it.id in selectedDlcIds }
-                                .map { it.id }
-                            SteamService.downloadApp(app.id, installableDlcIds, false, customPath)
-                            withContext(Dispatchers.Main) { onDismissRequest() }
-                        }
+                    if (isReallyInstalled) {
+                        startSteamInstall(com.winlator.cmod.feature.storage.DownloadTarget.INTERNAL)
+                    } else {
+                        showDownloadTarget = true
                     }
                 },
                 onCheckForUpdate = { startUpdateCheck(app.id, app.name) },

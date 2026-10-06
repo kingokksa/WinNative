@@ -17,13 +17,21 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.winlator.cmod.R
 import com.winlator.cmod.app.shell.UnifiedActivity
+import com.winlator.cmod.feature.storage.ExternalStorage
+import com.winlator.cmod.feature.storage.ExternalStorageSnapshot
 import com.winlator.cmod.feature.stores.epic.service.EpicAuthManager
 import com.winlator.cmod.feature.stores.epic.ui.auth.EpicOAuthActivity
 import com.winlator.cmod.feature.stores.gog.service.GOGAuthManager
 import com.winlator.cmod.feature.stores.gog.service.GOGService
 import com.winlator.cmod.feature.stores.gog.ui.auth.GOGOAuthActivity
+import com.winlator.cmod.feature.stores.itch.service.ItchAuthManager
+import com.winlator.cmod.feature.stores.itch.service.ItchService
+import com.winlator.cmod.feature.stores.itch.ui.auth.ItchLoginActivity
 import com.winlator.cmod.feature.stores.steam.SteamLoginActivity
 import com.winlator.cmod.feature.stores.steam.enums.Language
 import com.winlator.cmod.feature.stores.steam.service.SteamService
@@ -31,7 +39,9 @@ import com.winlator.cmod.feature.stores.steam.utils.PrefManager
 import com.winlator.cmod.shared.android.DirectoryPickerDialog
 import com.winlator.cmod.shared.io.AssetPaths
 import com.winlator.cmod.shared.io.FileUtils
+import com.winlator.cmod.shared.io.StorageUtils
 import com.winlator.cmod.shared.theme.WinNativeTheme
+import com.winlator.cmod.shared.ui.toast.WinToast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -39,6 +49,7 @@ import org.json.JSONObject
 
 class StoresFragment : Fragment() {
     private var storeState by mutableStateOf(StoreState())
+    private var externalSnapshot: ExternalStorageSnapshot = ExternalStorage.state.value
     private lateinit var serverOptions: List<Pair<Int, String>>
 
     private val gogLoginLauncher =
@@ -85,6 +96,13 @@ class StoresFragment : Fragment() {
             refresh()
         }
 
+    private val itchLoginLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult(),
+        ) {
+            refresh()
+        }
+
     // Lifecycle
     override fun onViewCreated(
         view: View,
@@ -92,6 +110,14 @@ class StoresFragment : Fragment() {
     ) {
         super.onViewCreated(view, savedInstanceState)
         (activity as? AppCompatActivity)?.supportActionBar?.setTitle(R.string.stores_accounts_title)
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                ExternalStorage.state.collect { snapshot ->
+                    externalSnapshot = snapshot
+                    refresh()
+                }
+            }
+        }
     }
 
     override fun onCreateView(
@@ -127,6 +153,13 @@ class StoresFragment : Fragment() {
                             EpicAuthManager.logoutSync(requireContext())
                             refresh()
                         },
+                        onItchSignIn = { itchLoginLauncher.launch(Intent(requireContext(), ItchLoginActivity::class.java)) },
+                        onItchSignOut = {
+                            CoroutineScope(Dispatchers.Main).launch {
+                                ItchService.signOut(requireContext())
+                                refresh()
+                            }
+                        },
                         onGogSignIn = { gogLoginLauncher.launch(Intent(requireContext(), GOGOAuthActivity::class.java)) },
                         onGogSignOut = {
                             CoroutineScope(Dispatchers.Main).launch {
@@ -151,6 +184,9 @@ class StoresFragment : Fragment() {
                         onPickSteamFolder = { pickFolder(PrefManager.steamDownloadFolder) { PrefManager.steamDownloadFolder = it } },
                         onPickEpicFolder = { pickFolder(PrefManager.epicDownloadFolder) { PrefManager.epicDownloadFolder = it } },
                         onPickGogFolder = { pickFolder(PrefManager.gogDownloadFolder) { PrefManager.gogDownloadFolder = it } },
+                        onPickItchFolder = { pickFolder(PrefManager.itchDownloadFolder) { PrefManager.itchDownloadFolder = it } },
+                        onAddExternalStorage = { pickExternalStorage() },
+                        onRemoveExternalStorage = { id -> removeExternalStorage(id) },
                         onContainerLanguageSelected = { index ->
                             val langName = Language.containerLangForIndex(index)
                             PrefManager.containerLanguage = langName
@@ -178,6 +214,8 @@ class StoresFragment : Fragment() {
                 isSteamLoggedIn = SteamService.isLoggedIn,
                 isEpicLoggedIn = EpicAuthManager.isLoggedIn(ctx),
                 isGogLoggedIn = GOGAuthManager.isLoggedIn(ctx),
+                isItchLoggedIn = ItchAuthManager.isLoggedIn(ctx),
+                itchUserName = ItchAuthManager.userName(ctx),
                 sharedFolder = PrefManager.useSingleDownloadFolder,
                 downloadSpeed = PrefManager.downloadSpeed,
                 downloadServer = PrefManager.cellId,
@@ -186,9 +224,47 @@ class StoresFragment : Fragment() {
                 steamFolder = resolveUri(PrefManager.steamDownloadFolder, ctx),
                 epicFolder = resolveUri(PrefManager.epicDownloadFolder, ctx),
                 gogFolder = resolveUri(PrefManager.gogDownloadFolder, ctx),
+                itchFolder = resolveUri(PrefManager.itchDownloadFolder, ctx),
                 containerLanguageLabels = containerLanguageLabels,
                 containerLanguageIndex = containerLanguageIndex,
+                externalDrives =
+                    externalSnapshot.drives.map { status ->
+                        ExternalDriveRow(
+                            id = status.drive.id,
+                            label = status.drive.label,
+                            path = status.drive.downloadPath,
+                            connected = status.connected,
+                            freeLabel = StorageUtils.formatBinarySize(status.freeBytes),
+                        )
+                    },
             )
+    }
+
+    private fun pickExternalStorage() {
+        val hostActivity = activity ?: return
+        DirectoryPickerDialog.show(
+            activity = hostActivity,
+            initialPath = externalSnapshot.mountedRoots.firstOrNull(),
+            title = getString(R.string.external_storage_add_title),
+        ) { path ->
+            hostActivity.lifecycleScope.launch {
+                val result = ExternalStorage.addDrive(hostActivity, path)
+                if (result.isFailure) {
+                    WinToast.show(
+                        hostActivity,
+                        hostActivity.getString(R.string.external_storage_add_invalid),
+                        android.widget.Toast.LENGTH_LONG,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun removeExternalStorage(id: String) {
+        val hostActivity = activity ?: return
+        hostActivity.lifecycleScope.launch {
+            ExternalStorage.removeDrive(hostActivity, id)
+        }
     }
 
     private fun loadServerOptions(): List<Pair<Int, String>> =

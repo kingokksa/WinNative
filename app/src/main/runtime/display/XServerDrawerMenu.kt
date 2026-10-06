@@ -1,5 +1,7 @@
 package com.winlator.cmod.runtime.display
 
+import androidx.compose.ui.platform.LocalContext
+import com.winlator.cmod.app.config.DeviceProfileSettings
 import android.app.Activity
 import android.content.Context
 import androidx.compose.animation.AnimatedContent
@@ -169,6 +171,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.winlator.cmod.R
+import com.winlator.cmod.shared.framegen.FrameGenEngine
 import com.winlator.cmod.shared.theme.SessionDrawerStyle
 import com.winlator.cmod.shared.theme.WinNativeTheme
 import com.winlator.cmod.shared.ui.dialog.WinNativeDialogButton
@@ -208,7 +211,6 @@ private val BottomDividerColor = SessionDrawerStyle.Outline
 internal val GlassExitTint = SessionDrawerStyle.GlassExitTint
 internal val RecordRed = Color(0xFFE53935)
 
-// Pane content scales down on short displays.
 internal val LocalPaneScale = staticCompositionLocalOf { 1f }
 
 private const val PANE_DIR_LEFT = 1
@@ -500,7 +502,6 @@ internal data class PendingTaskAffinity(
     val requestedAtMillis: Long,
 )
 
-// Top-rail pane specs.
 private data class RailPaneSpec(
     val pane: DrawerPane,
     val itemId: Int,
@@ -538,14 +539,12 @@ private val RAIL_PANES =
             itemId = R.id.main_menu_screen_effects,
             labelRes = R.string.session_drawer_rail_label_effects,
         ),
-        // Shown only when the host adds a main_menu_reshade item to state.items.
         RailPaneSpec(
             pane = DrawerPane.RESHADE,
             itemId = R.id.main_menu_reshade,
             labelRes = R.string.reshade_section_title,
             iconOverride = Icons.Outlined.AutoAwesome,
         ),
-        // Shown only when the host adds a main_menu_output item to state.items.
         RailPaneSpec(
             pane = DrawerPane.OUTPUT,
             itemId = R.id.main_menu_output,
@@ -571,9 +570,12 @@ private const val ActionCardRevealStaggerMs = 28
 private const val ActionCardRevealDurationMs = 220
 
 internal val FrameGenMultipliers = listOf(2, 3, 4)
-internal val FrameGenTargetRates = listOf(60, 90, 120, 144, 165)
+internal val FrameGenTargetRates = listOf(60, 90, 120, 144, 165, 185)
 internal const val FrameGenFlowScaleMin = 25
 internal const val FrameGenFlowScaleMax = 100
+internal val DisFrameGenTargetRates = listOf(60, 90, 120, 144, 165, 185)
+internal const val DisFrameGenScaleMin = 64
+internal const val DisFrameGenScaleMax = 1080
 
 enum class DrawerSide { LEFT, RIGHT, BOTH }
 
@@ -587,7 +589,6 @@ data class XServerDrawerItem(
     val side: DrawerSide = DrawerSide.LEFT,
 )
 
-/** Device-filtered options + persisted selections for the Record popup. Quality: 0=Perf,1=Balance,2=Quality. */
 data class RecordUiConfig(
     val fpsOptions: List<Int> = emptyList(),
     val resolutionLabels: List<String> = emptyList(),
@@ -629,6 +630,10 @@ data class XServerDrawerState(
     val frameGenMultiplier: Int = 2,
     val frameGenTargetRate: Int = 0,
     val frameGenFlowScale: Int = 70,
+    val disFrameGenEnabled: Boolean = false,
+    val disFrameGenScale: Int = 180,
+    val disFrameGenTargetFps: Int = 0,
+    val disFrameGenDebugFlow: Boolean = false,
     val screenEffectsCardExpanded: Boolean = false,
     val sgsrEnabled: Boolean = false,
     val sgsrSharpness: Int = 100,
@@ -649,7 +654,6 @@ data class XServerDrawerState(
     val pixelateEnabled: Boolean = false,
     val pixelateBlock: Int = 6,
     val colorBlind: Int = 0,
-    // reshadeMode is "solo" (one effect bypasses the rest) or "stack"; param keys follow ReshadeManager.seedValues.
     val reshadeMasterEnabled: Boolean = false,
     val reshadeMode: String = "solo",
     val reshadeLoadout: List<ReshadeLoadoutItem> = emptyList(),
@@ -660,6 +664,7 @@ data class XServerDrawerState(
     val inputControlsAccentThemeNames: List<String> = emptyList(),
     val inputControlsSelectedAccentThemeIndex: Int = 0,
     val inputControlsShowOverlay: Boolean = false,
+    val inputControlsAdaptiveJoysticks: Boolean = false,
     val inputControlsTapToClick: Boolean = true,
     val inputControlsOverlayOpacity: Float = 0.4f,
     val inputControlsTouchscreenHaptics: Boolean = false,
@@ -667,7 +672,6 @@ data class XServerDrawerState(
     val inputControlsGcmRumbleMode: String = "disabled",
     val inputControlsReverseBindingOrder: Boolean = false,
     val cursorSpeed: Float = 1.0f,
-    // External display / cast "Output" pane.
     val outputSwapActive: Boolean = false,
     val outputDisplayName: String = "",
     val outputResolutionLabels: List<String> = emptyList(),
@@ -677,12 +681,9 @@ data class XServerDrawerState(
     val outputAspectMode: Int = 0,
     val outputGameModeSupported: Boolean = false,
     val outputGameModeEnabled: Boolean = false,
-    // Sink ignored real mode switches — phone is scaling; resolution becomes a render-size control.
     val outputPanelScaling: Boolean = false,
     val outputPanelNative: String = "",
-    // Display connected but game still on the phone — show the "Send to display" button.
     val outputDisplayAvailable: Boolean = false,
-    // Viture XR glasses controls (USB), present only when Viture glasses are connected.
     val outputVitureConnected: Boolean = false,
     val outputVitureName: String = "",
     val outputVitureSupportsBrightness: Boolean = false,
@@ -750,7 +751,6 @@ class XServerDrawerStateHolder(
         private set
     private var paneVisibilityListener: ((Boolean) -> Unit)? = null
 
-    // Bumped on swap-back so the host re-requests a layout pass on the Compose-hosted display frame.
     var phoneRelayoutTick by mutableStateOf(0)
         private set
 
@@ -927,7 +927,6 @@ class XServerDrawerStateHolder(
         setOpenPaneAndNotify(DrawerPane.LOGS)
     }
 
-    /** Append a log line (any thread). Buffers off-thread when the pane is hidden (no recomposition); flushes to state when the pane is visible. */
     fun appendLogLine(line: String) {
         if (logsPausedFlag) return
         synchronized(logsBuffer) {
@@ -1043,11 +1042,21 @@ interface XServerDrawerActionListener {
 
     fun onFrameGenEnabledChanged(enabled: Boolean)
 
+    fun onFrameGenEngineSelected(engine: FrameGenEngine)
+
     fun onFrameGenMultiplierSelected(multiplier: Int)
 
     fun onFrameGenTargetRateSelected(rate: Int)
 
     fun onFrameGenFlowScaleChanged(percent: Int)
+
+    fun onDisFrameGenEnabledChanged(enabled: Boolean)
+
+    fun onDisFrameGenScaleChanged(percent: Int)
+
+    fun onDisFrameGenTargetFpsSelected(rate: Int)
+
+    fun onDisDebugFlowChanged(enabled: Boolean)
 
     fun onScreenEffectsCardExpandedChanged(expanded: Boolean)
 
@@ -1115,12 +1124,10 @@ interface XServerDrawerActionListener {
 
     fun onReshadeMasterEnabledChanged(enabled: Boolean)
 
-    // In solo mode enabling one effect bypasses the others (host-side).
     fun onReshadeEffectEnabledChanged(index: Int, enabled: Boolean)
 
     fun onReshadeModeChanged(mode: String)
 
-    // key = ReshadeManager.seedValues scheme.
     fun onReshadeParamChanged(index: Int, key: String, value: Float)
 
     fun onReshadeReset(index: Int)
@@ -1132,6 +1139,8 @@ interface XServerDrawerActionListener {
     fun onInputControlsAccentThemeSelected(index: Int)
 
     fun onInputControlsShowOverlayChanged(enabled: Boolean)
+
+    fun onInputControlsAdaptiveJoysticksChanged(enabled: Boolean)
 
     fun onInputControlsTapToClickChanged(enabled: Boolean)
 
@@ -1148,6 +1157,8 @@ interface XServerDrawerActionListener {
     fun onInputControlsReverseBindingOrderChanged(enabled: Boolean)
 
     fun onInputControlsEditClick()
+
+    fun onControllerTestClick()
 
     fun onScreenTouchModeChanged(mode: Int)
 
@@ -1179,7 +1190,6 @@ interface XServerDrawerActionListener {
 
     fun onLogsShare()
 
-    /** Start recording with the chosen settings (indices into the option lists in RecordUiConfig). */
     fun onRecordStart(fpsIndex: Int, resolutionIndex: Int, quality: Int, recordUI: Boolean)
 }
 
@@ -1242,6 +1252,7 @@ fun buildXServerDrawerState(
     inputControlsAccentThemeNames: List<String> = emptyList(),
     inputControlsSelectedAccentThemeIndex: Int = 0,
     inputControlsShowOverlay: Boolean = false,
+    inputControlsAdaptiveJoysticks: Boolean = false,
     inputControlsTapToClick: Boolean = true,
     inputControlsOverlayOpacity: Float = 0.4f,
     inputControlsTouchscreenHaptics: Boolean = false,
@@ -1460,6 +1471,7 @@ fun buildXServerDrawerState(
         inputControlsAccentThemeNames = inputControlsAccentThemeNames,
         inputControlsSelectedAccentThemeIndex = inputControlsSelectedAccentThemeIndex,
         inputControlsShowOverlay = inputControlsShowOverlay,
+        inputControlsAdaptiveJoysticks = inputControlsAdaptiveJoysticks,
         inputControlsTapToClick = inputControlsTapToClick,
         inputControlsOverlayOpacity = inputControlsOverlayOpacity,
         inputControlsTouchscreenHaptics = inputControlsTouchscreenHaptics,
@@ -1535,7 +1547,29 @@ fun withFrameGenState(
         frameGenFlowScale = flowScale.coerceIn(FrameGenFlowScaleMin, FrameGenFlowScaleMax),
     )
 
-// Append the always-present "Output" tab item and its state to the drawer state.
+fun withDisFrameGenState(
+    state: XServerDrawerState,
+    enabled: Boolean,
+    scale: Int,
+    targetFps: Int,
+    debugFlow: Boolean,
+): XServerDrawerState =
+    state.copy(
+        disFrameGenEnabled = enabled,
+        frameGenEnabled = state.frameGenEnabled && !enabled,
+        disFrameGenScale = scale.coerceIn(DisFrameGenScaleMin, DisFrameGenScaleMax),
+        disFrameGenTargetFps = targetFps.coerceAtLeast(0),
+        disFrameGenDebugFlow = debugFlow,
+        items =
+            state.items.map { item ->
+                if (item.itemId == R.id.main_menu_frame_generation) {
+                    item.copy(active = item.active || enabled)
+                } else {
+                    item
+                }
+            },
+    )
+
 fun withOutputState(
     state: XServerDrawerState,
     swapActive: Boolean,
@@ -1576,7 +1610,6 @@ fun withOutputState(
     )
 }
 
-// Overlay Viture-glasses control state onto the output state (only when Viture glasses are connected).
 fun withVitureState(
     state: XServerDrawerState,
     name: String,
@@ -1608,7 +1641,6 @@ fun withVitureState(
         outputVitureVolumeMax = volumeMax,
     )
 
-// Call only when a ReShade effect was applied at launch (Vulkan wrapper) so the vkBasalt layer is loaded.
 fun withReshadeState(
     state: XServerDrawerState,
     masterEnabled: Boolean,
@@ -1656,7 +1688,6 @@ internal fun XServerDrawerContent(
     controllerActive: Boolean = false,
     onOverlayCloserChange: ((() -> Unit)?) -> Unit = {},
 ) {
-    // Content stays composed while the sheet is closed (host translates it off-screen) to avoid a first-composition cost on open; the staggered card reveal is driven from the sheet's engaged state so it replays on each open.
     val cardsRevealed = remember { mutableStateOf(false) }
     LaunchedEffect(revealCards) { cardsRevealed.value = revealCards }
 
@@ -2129,17 +2160,28 @@ private fun ActionCardGrid(
     }
 
     val verticalPadding = (10f * paneScale).dp
+    val horizontalPadding = (10f * paneScale).dp
+    val maxAspect = DeviceProfileSettings.sessionActionCardMaxAspect(LocalContext.current)
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val rows = ((cards.size + ActionCardColumns - 1) / ActionCardColumns).coerceAtLeast(1)
+        val cardWidth =
+            (maxWidth - horizontalPadding * 2 - ActionCardSpacing * (ActionCardColumns - 1)) / ActionCardColumns
         val rowHeight =
-            ((maxHeight - verticalPadding * 2 - ActionCardSpacing * (rows - 1)) / rows)
-                .coerceAtLeast(ActionCardMinHeight * paneScale)
+            DeviceProfileSettings
+                .actionCardRowHeight(
+                    availableHeight = (maxHeight - verticalPadding * 2).value,
+                    cardWidth = cardWidth.value,
+                    rows = rows,
+                    spacing = ActionCardSpacing.value,
+                    minHeight = (ActionCardMinHeight * paneScale).value,
+                    maxAspect = maxAspect,
+                ).dp
         Column(
             modifier =
                 Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = (10f * paneScale).dp, vertical = verticalPadding),
+                    .padding(horizontal = horizontalPadding, vertical = verticalPadding),
         ) {
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
@@ -2706,7 +2748,6 @@ private fun PaneEnableRow(
         onCheckedChange = onCheckedChange,
     )
 }
-
 
 internal class TaskManagerPopupPositionProvider(private val gapPx: Int) : PopupPositionProvider {
     override fun calculatePosition(

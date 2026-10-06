@@ -1,4 +1,6 @@
 package com.winlator.cmod.feature.library
+
+import android.content.Context
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -45,12 +47,14 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.FlowRowScope
 import androidx.compose.foundation.layout.PaddingValues
+import com.winlator.cmod.runtime.display.environment.components.NetworkingSettings
 import com.winlator.cmod.shared.ui.layout.isPortraitLayout
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
@@ -82,11 +86,16 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.SliderState
 import androidx.compose.material3.Switch
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import com.winlator.cmod.runtime.container.Container
+import com.winlator.cmod.runtime.content.DriverPackages
+import com.winlator.cmod.runtime.display.wayland.WineWaylandSupport
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.window.Dialog
@@ -102,6 +111,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -140,11 +150,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.draw.scale
 import com.winlator.cmod.R
+import com.winlator.cmod.runtime.audio.directaudio.DirectAudioDriver
 import com.winlator.cmod.runtime.reshade.ReshadeCatalog
 import com.winlator.cmod.runtime.reshade.ReshadeCatalogEntry
 import com.winlator.cmod.runtime.reshade.ReshadeDownloader
 import com.winlator.cmod.runtime.reshade.ReshadeLoadout
 import com.winlator.cmod.runtime.reshade.ReshadeManager
+import com.winlator.cmod.shared.util.StringUtils
 import com.winlator.cmod.shared.framegen.FrameGenPreset
 import com.winlator.cmod.shared.theme.GameSettingsStyle
 import com.winlator.cmod.runtime.wine.WineThemeManager
@@ -377,6 +389,16 @@ data class WinComponentItem(val key: String, val label: String, val selectedInde
 data class EnvVarItem(val key: String, val value: String)
 
 // Row-preserving parse: duplicate names stay as separate rows (EnvVars would collapse them into a map).
+const val DISPLAY_SERVER_X11_INDEX = 0
+const val DISPLAY_SERVER_WAYLAND_INDEX = 1
+fun displayServerEntries(context: android.content.Context): List<String> = listOf(
+    context.getString(R.string.display_server_x11),
+    context.getString(R.string.display_server_wayland),
+)
+
+fun displayBackendFromIndex(index: Int): String =
+    if (index == DISPLAY_SERVER_WAYLAND_INDEX) Container.DISPLAY_BACKEND_WAYLAND else Container.DISPLAY_BACKEND_X11
+
 fun parseEnvVarItems(envVarsStr: String?): List<EnvVarItem> =
     envVarsStr.orEmpty().split(" ").mapNotNull { part ->
         val index = part.indexOf('=')
@@ -402,6 +424,10 @@ class GameSettingsStateHolder {
     val containerEntries = mutableStateOf<List<String>>(emptyList())
     val selectedContainer = mutableIntStateOf(0)
     val screenSizeEntries = mutableStateOf<List<String>>(emptyList())
+    val standardScreenSizeEntries = mutableStateOf<List<String>>(emptyList())
+    val deviceScreenSizeEntries = mutableStateOf<List<String>>(emptyList())
+    val devicePanelSummary = mutableStateOf("")
+    val showDeviceResolutions = mutableStateOf(false)
     val selectedScreenSize = mutableIntStateOf(0)
     val customWidth = mutableStateOf("")
     val customHeight = mutableStateOf("")
@@ -414,6 +440,13 @@ class GameSettingsStateHolder {
     val fpsLimit = mutableIntStateOf(0)
 
     // Display
+    val displayServerEntries = mutableStateOf<List<String>>(emptyList())
+    val selectedDisplayServer = mutableIntStateOf(0)
+    val displayServerWaylandAvailable = mutableStateOf(false)
+    /** The GameScope container always draws through the Wayland compositor. */
+    val gamescopeContainer = mutableStateOf(false)
+    // Wine identifier the session will use when the wine dropdown is not shown (shortcut editor).
+    val wineVersionIdentifier = mutableStateOf("")
     val graphicsDriverEntries = mutableStateOf<List<String>>(emptyList())
     val selectedGraphicsDriver = mutableIntStateOf(0)
     val isArm64EC = mutableStateOf(false)
@@ -430,6 +463,11 @@ class GameSettingsStateHolder {
 
     val frameGenEnabled = mutableStateOf(false)
     val frameGenMultiplier = mutableIntStateOf(2)
+
+    val netDriverEntries = mutableStateOf<List<String>>(emptyList())
+    val selectedNetDriver = mutableIntStateOf(0)
+    val netMac = mutableStateOf("")
+    val netMacAuto = mutableStateOf("")
     val frameGenTargetRate = mutableIntStateOf(0)
     val frameGenFlowScale = mutableIntStateOf(70)
     val frameGenShaderState = mutableIntStateOf(FRAMEGEN_SHADERS_CHECKING)
@@ -465,8 +503,9 @@ class GameSettingsStateHolder {
     val gfxSelectedBcnEmulationCache = mutableIntStateOf(0)
     val gfxTranscoderEntries = mutableStateOf<List<String>>(emptyList())
     val gfxSelectedTranscoder = mutableIntStateOf(0)
-    val gfxQualityEntries = mutableStateOf<List<String>>(emptyList())
-    val gfxSelectedQuality = mutableIntStateOf(0)
+    val gfxAstcTranscodingEntries = mutableStateOf<List<String>>(emptyList())
+    val gfxAstcTranscodingValues = mutableStateOf<List<String>>(emptyList())
+    val gfxSelectedAstcTranscoding = mutableIntStateOf(0)
     val gfxSyncFrame = mutableStateOf(false)
     val gfxDisablePresentWait = mutableStateOf(false)
 
@@ -501,6 +540,7 @@ class GameSettingsStateHolder {
     // Audio
     val audioDriverEntries = mutableStateOf<List<String>>(emptyList())
     val selectedAudioDriver = mutableIntStateOf(0)
+    val directAudioMic = mutableStateOf(false)
     val midiSoundFontEntries = mutableStateOf<List<String>>(emptyList())
     val selectedMidiSoundFont = mutableIntStateOf(0)
 
@@ -552,6 +592,7 @@ class GameSettingsStateHolder {
     val numControllersEntries = mutableStateOf<List<String>>(emptyList())
     val selectedNumControllers = mutableIntStateOf(0)
     val disableXInput = mutableStateOf(false)
+    val adaptiveJoysticks = mutableStateOf(false)
     val simTouchScreen = mutableStateOf(false)
     val screenTouchMode = mutableIntStateOf(0)
     val gestureProfileEntries = mutableStateOf<List<String>>(emptyList())
@@ -576,6 +617,8 @@ class GameSettingsStateHolder {
     val selectedFexcoreVersion = mutableIntStateOf(0)
     val fexcorePresetEntries = mutableStateOf<List<String>>(emptyList())
     val selectedFexcorePreset = mutableIntStateOf(0)
+    val linuxProtonEntries = mutableStateOf<List<String>>(emptyList())
+    val selectedLinuxProton = mutableIntStateOf(0)
     val useUnixLibs = mutableStateOf(true)
 
     // Advanced - System
@@ -597,6 +640,51 @@ class GameSettingsStateHolder {
     val drives = mutableStateOf("")
 
     val isLoaded = mutableStateOf(false)
+
+    fun applyScreenSizeEntries(useDeviceResolutions: Boolean) {
+        val device = deviceScreenSizeEntries.value
+        val standard = standardScreenSizeEntries.value
+        val useDevice = useDeviceResolutions && device.size > 1
+        showDeviceResolutions.value = useDevice
+        val next = if (useDevice) device else standard
+        if (next.isEmpty()) return
+
+        val current = selectedScreenSizeValue()
+        screenSizeEntries.value = next
+        val index = next.indexOfFirst { StringUtils.parseIdentifier(it) == current }
+        if (index >= 0) {
+            selectedScreenSize.intValue = index
+            return
+        }
+        val currentHeight = heightOf(current)
+        if (currentHeight > 0) {
+            val tierIndex = next.indexOfFirst { heightOf(StringUtils.parseIdentifier(it)) == currentHeight }
+            if (tierIndex >= 0) {
+                selectedScreenSize.intValue = tierIndex
+                return
+            }
+        }
+        selectedScreenSize.intValue = 0
+        val parts = current.split("x")
+        if (parts.size == 2) {
+            customWidth.value = parts[0]
+            customHeight.value = parts[1]
+        }
+    }
+
+    private fun heightOf(screenSize: String): Int {
+        val parts = screenSize.split("x")
+        return if (parts.size == 2) parts[1].toIntOrNull() ?: 0 else 0
+    }
+
+    private fun selectedScreenSizeValue(): String {
+        val entries = screenSizeEntries.value
+        val index = selectedScreenSize.intValue
+        if (index > 0 && index in entries.indices) return StringUtils.parseIdentifier(entries[index])
+        val width = customWidth.value.trim()
+        val height = customHeight.value.trim()
+        return if (width.isEmpty() || height.isEmpty()) "" else "${width}x$height"
+    }
 }
 
 interface GameSettingsCallbacks {
@@ -674,7 +762,7 @@ const val FRAMEGEN_SHADERS_UPDATED = 5
 const val FRAMEGEN_SHADERS_NOT_OWNED = 6
 
 val FrameGenMultiplierOptions = listOf(2, 3, 4)
-val FrameGenTargetOptions = listOf(0, 60, 90, 120, 144)
+val FrameGenTargetOptions = listOf(0, 60, 90, 120, 144, 165, 185)
 
 private const val SEC_GENERAL = 0
 private const val SEC_STEAM = 1
@@ -687,10 +775,26 @@ private const val SEC_INPUT = 7
 private const val SEC_ADVANCED = 8
 private const val SEC_DRIVES = 9
 private const val SEC_SAVES = 10
+private const val SEC_NETWORKING = 11
 
-private fun buildSections(isSteam: Boolean, isContainer: Boolean): List<Pair<Int, SidebarSection>> {
+private fun buildSections(
+    isSteam: Boolean,
+    isContainer: Boolean,
+    gamescope: Boolean,
+): List<Pair<Int, SidebarSection>> {
     val list = mutableListOf<Pair<Int, SidebarSection>>()
     list += SEC_GENERAL to SidebarSection(Icons.Outlined.Tune, R.string.settings_general_title)
+    // A GameScope session runs the Linux Steam client and Proton: there is no Wine prefix of ours
+    // to configure, so the Steam launcher, ReShade, Windows components, drives and prefix pages
+    // would change nothing.
+    if (gamescope) {
+        list += SEC_DISPLAY to SidebarSection(Icons.Outlined.Monitor, R.string.common_ui_graphics)
+        list += SEC_ADVANCED to SidebarSection(Icons.Outlined.Settings, R.string.common_ui_advanced)
+        list += SEC_VARIABLES to SidebarSection(Icons.Outlined.Code, R.string.container_config_variables)
+        list += SEC_INPUT to SidebarSection(Icons.Outlined.SportsEsports, R.string.common_ui_input_controls)
+        list += SEC_NETWORKING to SidebarSection(Icons.Outlined.Wifi, R.string.networking_section_title)
+        return list
+    }
     if (isSteam) list += SEC_STEAM to SidebarSection(Icons.Outlined.Science, R.string.steam_section_title)
     list += SEC_DISPLAY to SidebarSection(Icons.Outlined.Monitor, R.string.common_ui_graphics)
     list += SEC_ADVANCED to SidebarSection(Icons.Outlined.Settings, R.string.common_ui_advanced)
@@ -698,6 +802,7 @@ private fun buildSections(isSteam: Boolean, isContainer: Boolean): List<Pair<Int
     list += SEC_VARIABLES to SidebarSection(Icons.Outlined.Code, R.string.container_config_variables)
     list += SEC_INPUT to SidebarSection(Icons.Outlined.SportsEsports, R.string.common_ui_input_controls)
     list += SEC_COMPONENTS to SidebarSection(Icons.Outlined.Extension, R.string.settings_content_components)
+    list += SEC_NETWORKING to SidebarSection(Icons.Outlined.Wifi, R.string.networking_section_title)
     if (isContainer) {
         list += SEC_DRIVES to SidebarSection(Icons.Outlined.Storage, R.string.container_config_drives)
     }
@@ -716,9 +821,16 @@ fun GameSettingsContent(
 ) {
     val isSteam by state.isSteamGame
     val isContainer by state.isContainerEditMode
-    val sections = remember(isSteam, isContainer) { buildSections(isSteam, isContainer) }
+    val gamescope by state.gamescopeContainer
+    val sections = remember(isSteam, isContainer, gamescope) { buildSections(isSteam, isContainer, gamescope) }
+    // The pages change with the container; stay on the page that was open, by what it is.
+    var openSectionId by remember { mutableIntStateOf(SEC_GENERAL) }
+    LaunchedEffect(sections) {
+        state.currentSection.intValue = sections.indexOfFirst { it.first == openSectionId }.coerceAtLeast(0)
+    }
     val selectedIdx by state.currentSection
     val currentSectionId = sections.getOrNull(selectedIdx)?.first ?: SEC_GENERAL
+    SideEffect { openSectionId = currentSectionId }
     val saveEnabled by state.isLoaded
 
     if (nav != null) {
@@ -1042,6 +1154,7 @@ private fun SectionContent(
                     SEC_ADVANCED -> AdvancedSection(state, callbacks)
                     SEC_DRIVES -> DrivesSection(state, callbacks)
                     SEC_SAVES -> SavesSection(state, callbacks)
+                    SEC_NETWORKING -> NetworkingSection(state)
                 }
                 Spacer(Modifier.height(SettingSectionGap))
             }
@@ -1353,7 +1466,7 @@ private fun GeneralSection(
             onValueChange = { state.name.value = it }
         )
 
-        if (!isContainer) {
+        if (!isContainer && !state.gamescopeContainer.value) {
             val launchExeDisplayText = state.launchExeDisplayPath.value.ifBlank { state.launchExePath.value }
             val hasLaunchExePath = launchExeDisplayText.isNotEmpty()
             Spacer(Modifier.height(SettingItemGap))
@@ -1397,7 +1510,7 @@ private fun GeneralSection(
             )
         }
 
-        if (isContainer && state.wineVersionEntries.value.isNotEmpty()) {
+        if (isContainer && !state.gamescopeContainer.value && state.wineVersionEntries.value.isNotEmpty()) {
             Spacer(Modifier.height(SettingItemGap))
             SettingDropdown(
                 label = stringResource(R.string.container_wine_version),
@@ -1576,6 +1689,26 @@ private fun GeneralSection(
             }
         }
 
+        if (state.deviceScreenSizeEntries.value.size > 1) {
+            Spacer(Modifier.height(SettingItemGap))
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                SettingSwitch(
+                    label = stringResource(R.string.container_config_show_device_resolutions),
+                    checked = state.showDeviceResolutions.value,
+                    onCheckedChange = { on -> state.applyScreenSizeEntries(on) }
+                )
+                Text(
+                    stringResource(
+                        R.string.container_config_show_device_resolutions_help,
+                        state.devicePanelSummary.value
+                    ),
+                    color = TextDim,
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp
+                )
+            }
+        }
+
         // Custom resolution fields when "Custom" is selected (index 0)
         if (state.selectedScreenSize.intValue == 0) {
             Spacer(Modifier.height(SettingItemGap))
@@ -1616,11 +1749,44 @@ private fun GeneralSection(
                 )
             }
             Box(Modifier.weight(1f)) {
-                SettingDropdown(
-                    label = stringResource(R.string.settings_audio_midi_sound_font),
-                    entries = state.midiSoundFontEntries.value,
-                    selectedIndex = state.selectedMidiSoundFont.intValue,
-                    onSelected = { state.selectedMidiSoundFont.intValue = it }
+                if (!state.gamescopeContainer.value) {
+                    SettingDropdown(
+                        label = stringResource(R.string.settings_audio_midi_sound_font),
+                        entries = state.midiSoundFontEntries.value,
+                        selectedIndex = state.selectedMidiSoundFont.intValue,
+                        onSelected = { state.selectedMidiSoundFont.intValue = it }
+                    )
+                }
+            }
+        }
+
+        // Only DirectAudio has a capture path; ALSA and PulseAudio cannot record.
+        val audioContext = LocalContext.current
+        val directAudioSelected = StringUtils.parseIdentifier(
+            state.audioDriverEntries.value.getOrNull(state.selectedAudioDriver.intValue) ?: ""
+        ) == DirectAudioDriver.IDENTIFIER
+
+        AnimatedVisibility(
+            visible = directAudioSelected,
+            enter = graphicsCardExpandEnter(),
+            exit = graphicsCardExpandExit()
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                SettingSwitch(
+                    label = stringResource(R.string.container_config_direct_audio_mic),
+                    checked = state.directAudioMic.value,
+                    onCheckedChange = { on ->
+                        state.directAudioMic.value = on
+                        if (on) {
+                            DirectAudioDriver.requestMicPermission(audioContext)
+                        }
+                    }
+                )
+                Text(
+                    stringResource(R.string.container_config_direct_audio_mic_help),
+                    color = TextDim,
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp
                 )
             }
         }
@@ -1679,6 +1845,11 @@ private fun DisplaySection(
     callbacks: GameSettingsCallbacks
 ) {
 
+    if (state.gamescopeContainer.value) {
+        GamescopeDisplaySection(state, callbacks)
+        return
+    }
+
     SettingGroup {
         SettingPairRow {
             Box(Modifier.weight(1f)) {
@@ -1698,6 +1869,10 @@ private fun DisplaySection(
                 )
             }
         }
+
+        Spacer(Modifier.height(SettingSectionGap))
+
+        DisplayServerRow(state)
 
         Spacer(Modifier.height(SettingSectionGap))
 
@@ -1750,6 +1925,133 @@ private fun DisplaySection(
         WineD3DConfigCard(state)
     }
 
+}
+
+/**
+ * A GameScope container draws with the Turnip the Linux runtime carries, and its games bring their
+ * own DXVK and VKD3D inside Proton, so the Android drivers and the DX wrappers are not offered.
+ */
+@Composable
+private fun GamescopeDisplaySection(
+    state: GameSettingsStateHolder,
+    callbacks: GameSettingsCallbacks
+) {
+    SettingGroup {
+        SettingPairRow {
+            Box(Modifier.weight(1f)) {
+                SettingDropdown(
+                    label = stringResource(R.string.container_graphics_driver),
+                    entries = state.gfxDriverVersionEntries.value,
+                    selectedIndex = state.gfxSelectedDriverVersion.intValue,
+                    onSelected = {
+                        state.gfxSelectedDriverVersion.intValue = it
+                        state.graphicsDriverVersion.value = state.gfxDriverVersionEntries.value.getOrElse(it) { "" }
+                        callbacks.onGfxDriverVersionChanged(it)
+                    }
+                )
+            }
+            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                Text(
+                    text = stringResource(R.string.container_graphics_driver_gamescope_help),
+                    color = TextDim,
+                    fontSize = SettingLabelSize,
+                    modifier = Modifier.padding(top = SettingLabelRowHeight)
+                )
+            }
+        }
+
+        Spacer(Modifier.height(SettingSectionGap))
+
+        DisplayServerRow(state)
+    }
+
+    Spacer(Modifier.height(SettingItemGap))
+
+    FrameGenerationCard(state)
+}
+
+/**
+ * X11 or the embedded Wayland compositor. Wayland is selectable only when the device has an Adreno
+ * GPU and the selected Wine/Proton ships winewayland; otherwise the row is greyed out with the
+ * requirement text and the stored choice is left untouched.
+ */
+@Composable
+private fun DisplayServerRow(state: GameSettingsStateHolder) {
+    val entries = state.displayServerEntries.value
+    if (entries.isEmpty()) return
+    val context = LocalContext.current
+    if (state.gamescopeContainer.value) {
+        SettingPairRow {
+            Box(Modifier.weight(1f)) {
+                SettingDropdown(
+                    label = stringResource(R.string.container_display_server),
+                    entries = entries,
+                    selectedIndex = DISPLAY_SERVER_WAYLAND_INDEX,
+                    onSelected = {},
+                    enabled = false
+                )
+            }
+            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                Text(
+                    text = stringResource(R.string.container_display_server_gamescope),
+                    color = TextDim,
+                    fontSize = SettingLabelSize,
+                    modifier = Modifier.padding(top = SettingLabelRowHeight)
+                )
+            }
+        }
+        return
+    }
+    val wineIdentifier = displayServerWineIdentifier(state)
+    val initial = DisplayServerStatus(
+        if (state.displayServerWaylandAvailable.value) WAYLAND_AVAILABLE else WAYLAND_NEEDS_PROTON, ""
+    )
+    val status by produceState(initialValue = initial, key1 = wineIdentifier) {
+        val result = withContext(Dispatchers.IO) { displayServerStatus(context, wineIdentifier) }
+        state.displayServerWaylandAvailable.value = result.reason == WAYLAND_AVAILABLE
+        value = result
+    }
+    val enabled = status.reason == WAYLAND_AVAILABLE
+    SettingPairRow {
+        Box(Modifier.weight(1f)) {
+            SettingDropdown(
+                label = stringResource(R.string.container_display_server),
+                entries = entries,
+                selectedIndex = state.selectedDisplayServer.intValue,
+                onSelected = { state.selectedDisplayServer.intValue = it },
+                enabled = enabled
+            )
+        }
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+            Text(
+                text = when (status.reason) {
+                    WAYLAND_AVAILABLE -> stringResource(R.string.container_display_server_help)
+                    WAYLAND_NEEDS_ADRENO -> stringResource(R.string.container_display_server_wayland_requirements)
+                    else -> stringResource(R.string.container_display_server_needs_wayland_proton)
+                },
+                color = TextDim,
+                fontSize = SettingLabelSize,
+                modifier = Modifier.padding(top = SettingLabelRowHeight)
+            )
+        }
+    }
+}
+
+private const val WAYLAND_AVAILABLE = 0
+private const val WAYLAND_NEEDS_ADRENO = 1
+private const val WAYLAND_NEEDS_PROTON = 2
+
+private data class DisplayServerStatus(val reason: Int, val donor: String)
+
+private fun displayServerWineIdentifier(state: GameSettingsStateHolder): String =
+    if (state.wineVersionEditable.value && state.wineVersionEntries.value.isNotEmpty())
+        state.wineVersionEntries.value.getOrElse(state.selectedWineVersion.intValue) { "" }
+    else state.wineVersionIdentifier.value
+
+private fun displayServerStatus(context: Context, wineIdentifier: String): DisplayServerStatus {
+    if (!WineWaylandSupport.isAdrenoDevice(context)) return DisplayServerStatus(WAYLAND_NEEDS_ADRENO, "")
+    if (WineWaylandSupport.isWaylandCapable(context, wineIdentifier)) return DisplayServerStatus(WAYLAND_AVAILABLE, "")
+    return DisplayServerStatus(WAYLAND_NEEDS_PROTON, "")
 }
 
 @Composable
@@ -2130,10 +2432,10 @@ private fun GraphicsDriverConfigCard(
                         }
                         Box(Modifier.weight(1f)) {
                             SettingDropdown(
-                                label = stringResource(R.string.container_graphics_quality),
-                                entries = state.gfxQualityEntries.value,
-                                selectedIndex = state.gfxSelectedQuality.intValue,
-                                onSelected = { state.gfxSelectedQuality.intValue = it }
+                                label = stringResource(R.string.container_graphics_astc_transcoding),
+                                entries = state.gfxAstcTranscodingEntries.value,
+                                selectedIndex = state.gfxSelectedAstcTranscoding.intValue,
+                                onSelected = { state.gfxSelectedAstcTranscoding.intValue = it }
                             )
                         }
                     }
@@ -3018,9 +3320,11 @@ private fun ReshadeFloatSlider(
                 color = TextSecondary,
                 fontSize = SettingLabelSize,
                 fontWeight = FontWeight.Medium,
-                letterSpacing = 0.3.sp
+                letterSpacing = 0.3.sp,
+                // Both children were unweighted, so a long localized label was measured
+                // against the whole row and left the value chip nothing.
+                modifier = Modifier.weight(1f)
             )
-            Spacer(Modifier.weight(1f))
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(6.dp))
@@ -3586,13 +3890,11 @@ private fun ReshadeCatalogRow(
 @Composable
 private fun SteamSection(state: GameSettingsStateHolder) {
 
-    // Steam Launcher is the default path; enabling it unchecks every other Steam mode (mutually exclusive launch paths).
     val onSteamLauncherChange: (Boolean) -> Unit = { enabled ->
         state.steamLauncher.value = enabled
         if (enabled) {
             state.useLegacyLauncher.value = false
             state.runtimePatcher.value = false
-            state.steamOfflineMode.value = false
         }
     }
 
@@ -3600,13 +3902,27 @@ private fun SteamSection(state: GameSettingsStateHolder) {
     Spacer(Modifier.height(8.dp))
     SettingGroup {
         SettingCheckbox(
-            label = "Steam Launcher",
+            label = stringResource(R.string.steam_launcher_real_client),
             checked = state.steamLauncher.value,
             onCheckedChange = onSteamLauncherChange
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            "Run the game through the in-Wine Steam Launcher (recommended). Disables other Steam launch modes.",
+            stringResource(R.string.steam_launcher_real_client_description),
+            color = TextDim,
+            fontSize = 11.sp,
+            lineHeight = 16.sp
+        )
+        Spacer(Modifier.height(SettingItemGap))
+
+        SettingCheckbox(
+            label = stringResource(R.string.shortcuts_properties_steam_offline_mode),
+            checked = state.steamOfflineMode.value,
+            onCheckedChange = { state.steamOfflineMode.value = it }
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            stringResource(R.string.shortcuts_properties_steam_offline_mode_description),
             color = TextDim,
             fontSize = 11.sp,
             lineHeight = 16.sp
@@ -3649,25 +3965,6 @@ private fun SteamSection(state: GameSettingsStateHolder) {
         )
         Spacer(Modifier.height(SettingItemGap))
         */
-
-        SettingCheckbox(
-            label = stringResource(R.string.shortcuts_properties_steam_offline_mode),
-            checked = state.steamOfflineMode.value,
-            onCheckedChange = {
-                state.steamOfflineMode.value = it
-                if (it) state.steamLauncher.value = false
-            },
-            enabled = state.useLegacyLauncher.value
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            stringResource(R.string.shortcuts_properties_steam_offline_mode_description),
-            color = TextDim,
-            fontSize = 11.sp,
-            lineHeight = 16.sp,
-            modifier = Modifier.alpha(if (state.useLegacyLauncher.value) 1f else 0.4f)
-        )
-        Spacer(Modifier.height(SettingItemGap))
 
         SettingCheckbox(
             label = stringResource(R.string.shortcuts_properties_runtime_patcher),
@@ -3741,7 +4038,7 @@ private fun WineSection(
                     offset = localeMenuOffset.value,
                     shape = RoundedCornerShape(8.dp),
                     containerColor = CardSurface,
-                    modifier = Modifier.height(300.dp)
+                    modifier = Modifier.heightIn(max = 300.dp)
                 ) {
                     state.localeOptions.value.forEach { locale ->
                         DropdownMenuItem(
@@ -3940,6 +4237,48 @@ private fun ComponentsSection(
     }
 }
 
+@Composable
+private fun NetworkingSection(state: GameSettingsStateHolder) {
+    val driverActive = state.selectedNetDriver.intValue == 0
+    val macValid = NetworkingSettings.isValidMac(state.netMac.value)
+    SubsectionLabel(stringResource(R.string.networking_driver))
+    Spacer(Modifier.height(8.dp))
+    SettingGroup {
+        SettingDropdown(
+            label = stringResource(R.string.networking_driver),
+            entries = state.netDriverEntries.value,
+            selectedIndex = state.selectedNetDriver.intValue,
+            onSelected = { state.selectedNetDriver.intValue = it }
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = stringResource(R.string.networking_driver_summary),
+            style = MaterialTheme.typography.bodySmall,
+            color = LocalContentColor.current.copy(alpha = 0.7f)
+        )
+    }
+    Spacer(Modifier.height(SettingSectionGap))
+    SubsectionLabel(stringResource(R.string.networking_mac))
+    Spacer(Modifier.height(8.dp))
+    SettingGroup {
+        SettingTextField(
+            label = stringResource(R.string.networking_mac),
+            value = state.netMac.value,
+            onValueChange = { v -> state.netMac.value = v.filter { it.isLetterOrDigit() || it == ':' || it == '-' }.take(17) },
+            keyboardType = KeyboardType.Ascii,
+            enabled = driverActive
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = if (!macValid) stringResource(R.string.networking_mac_invalid)
+            else if (state.netMac.value.isBlank()) stringResource(R.string.networking_mac_automatic, state.netMacAuto.value)
+            else stringResource(R.string.networking_mac_summary),
+            style = MaterialTheme.typography.bodySmall,
+            color = if (!macValid) MaterialTheme.colorScheme.error else LocalContentColor.current.copy(alpha = 0.7f)
+        )
+    }
+}
+
 private fun findKnownEnvVar(name: String): Array<String>? =
     EnvVarsView.knownEnvVars.firstOrNull { it[0] == name }
 
@@ -3957,7 +4296,8 @@ private fun VariablesSection(
     val hasDraftEnvVar = state.envVars.value.any { it.key.isBlank() }
 
     // Ensure the required toggles exist upon entering the variables section
-    LaunchedEffect(Unit) {
+    LaunchedEffect(state.gamescopeContainer.value) {
+        if (state.gamescopeContainer.value) return@LaunchedEffect
         val current = state.envVars.value.toMutableList()
         var changed = false
         if (current.none { it.key == "WINEESYNC" }) {
@@ -4017,7 +4357,8 @@ private fun VariablesSection(
                         list[index] = EnvVarItem(envVar.key, v)
                         state.envVars.value = list
                     },
-                    onRemove = { callbacks.onRemoveEnvVar(index) }
+                    onRemove = { callbacks.onRemoveEnvVar(index) },
+                    gamescope = state.gamescopeContainer.value
                 )
             }
         }
@@ -4279,6 +4620,7 @@ private fun EnvVarRow(
     onNameChange: (String) -> Unit,
     onValueChange: (String) -> Unit,
     onRemove: (() -> Unit)?,
+    gamescope: Boolean = false,
     trailing: (@Composable () -> Unit)? = null
 ) {
     var nameMenuExpanded by remember { mutableStateOf(false) }
@@ -4368,7 +4710,7 @@ private fun EnvVarRow(
                 shape = RoundedCornerShape(8.dp),
                 containerColor = CardSurface,
                 modifier = Modifier
-                    .height(360.dp)
+                    .heightIn(max = 360.dp)
                     .width(260.dp)
             ) {
                 DropdownMenuItem(
@@ -4391,6 +4733,7 @@ private fun EnvVarRow(
 
                 EnvVarsView.knownEnvVars
                     .map { it[0] }
+                    .filter { !gamescope || EnvVarsView.appliesToGamescope(it) }
                     .sortedBy { it.uppercase() }
                     .forEach { knownName ->
                         DropdownMenuItem(
@@ -4713,7 +5056,7 @@ private fun EnvValueMultiDropdown(
             shape = RoundedCornerShape(8.dp),
             containerColor = CardSurface,
             modifier = Modifier
-                .height(320.dp)
+                .heightIn(max = 320.dp)
                 .width(260.dp)
         ) {
             options.forEach { opt ->
@@ -4801,6 +5144,7 @@ private fun EnvValueTextField(
 @Composable
 private fun InputSection(state: GameSettingsStateHolder) {
     val isContainer = state.isContainerEditMode.value
+    val gamescope = state.gamescopeContainer.value
 
     SubsectionLabel(stringResource(R.string.common_ui_input_controls))
     Spacer(Modifier.height(8.dp))
@@ -4828,36 +5172,45 @@ private fun InputSection(state: GameSettingsStateHolder) {
             Spacer(Modifier.height(SettingItemGap))
         }
 
-        val exclusiveChecked = if (isContainer) state.containerExclusiveInput.value
-        else state.shortcutExclusiveXInput.value
-        SettingPairRow {
-            Box(Modifier.weight(1f)) {
-                SettingCheckbox(
-                    label = stringResource(R.string.shortcuts_properties_exclusive_input),
-                    checked = exclusiveChecked,
-                    onCheckedChange = { enabled ->
-                        if (isContainer) {
-                            state.containerExclusiveInput.value = enabled
-                        } else {
-                            state.shortcutExclusiveXInput.value = enabled
+        if (!gamescope) {
+            val exclusiveChecked = if (isContainer) state.containerExclusiveInput.value
+            else state.shortcutExclusiveXInput.value
+            SettingPairRow {
+                Box(Modifier.weight(1f)) {
+                    SettingCheckbox(
+                        label = stringResource(R.string.shortcuts_properties_exclusive_input),
+                        checked = exclusiveChecked,
+                        onCheckedChange = { enabled ->
+                            if (isContainer) {
+                                state.containerExclusiveInput.value = enabled
+                            } else {
+                                state.shortcutExclusiveXInput.value = enabled
+                            }
+                            if (!enabled) {
+                                state.enableXInput.value = true
+                                state.enableDInput.value = true
+                            } else if (state.enableXInput.value && state.enableDInput.value) {
+                                state.enableDInput.value = false
+                            }
                         }
-                        if (!enabled) {
-                            state.enableXInput.value = true
-                            state.enableDInput.value = true
-                        } else if (state.enableXInput.value && state.enableDInput.value) {
-                            state.enableDInput.value = false
-                        }
-                    }
-                )
-            }
-            Box(Modifier.weight(1f)) {
-                SettingCheckbox(
-                    label = stringResource(R.string.container_config_sdl2_compatibility),
-                    checked = state.sdl2Compatibility.value,
-                    onCheckedChange = { state.sdl2Compatibility.value = it }
-                )
+                    )
+                }
+                Box(Modifier.weight(1f)) {
+                    SettingCheckbox(
+                        label = stringResource(R.string.container_config_sdl2_compatibility),
+                        checked = state.sdl2Compatibility.value,
+                        onCheckedChange = { state.sdl2Compatibility.value = it }
+                    )
+                }
             }
         }
+        Spacer(Modifier.height(4.dp))
+
+        SettingCheckbox(
+            label = stringResource(R.string.input_controls_adaptive_joysticks),
+            checked = state.adaptiveJoysticks.value,
+            onCheckedChange = { state.adaptiveJoysticks.value = it }
+        )
 
         if (!isContainer) {
             Spacer(Modifier.height(4.dp))
@@ -4918,137 +5271,183 @@ private fun InputSection(state: GameSettingsStateHolder) {
         }
     }
 
-    Spacer(Modifier.height(SettingSectionGap))
+    // XInput, DirectInput and their mapper are Wine's; a Linux session's pad is an evdev device.
+    if (!gamescope) {
+        Spacer(Modifier.height(SettingSectionGap))
 
-    SubsectionLabel(stringResource(R.string.session_gamepad_game_controller))
+        SubsectionLabel(stringResource(R.string.session_gamepad_game_controller))
+        Spacer(Modifier.height(8.dp))
+        SettingGroup {
+            // DInput Mapper Type (only visible when DInput enabled)
+            if (state.enableDInput.value) {
+                SettingDropdown(
+                    label = stringResource(R.string.container_config_directinput_mapper_type),
+                    entries = state.dInputMapperTypeEntries.value,
+                    selectedIndex = state.selectedDInputMapperType.intValue,
+                    onSelected = { state.selectedDInputMapperType.intValue = it }
+                )
+                Spacer(Modifier.height(SettingItemGap))
+            }
+
+            // Enable XInput with help — only toggleable when Exclusive Input is on.
+            val inputApisLocked = if (isContainer) !state.containerExclusiveInput.value
+            else !state.shortcutExclusiveXInput.value
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(Modifier.weight(1f)) {
+                    SettingCheckbox(
+                        label = stringResource(R.string.container_config_enable_xinput),
+                        checked = state.enableXInput.value,
+                        onCheckedChange = {
+                            state.enableXInput.value = it
+                            if (!inputApisLocked && it && state.enableDInput.value) state.enableDInput.value = false
+                        },
+                        enabled = !inputApisLocked
+                    )
+                }
+                var showXInputHelp by remember { mutableStateOf(false) }
+                val xInputHelpOffset = rememberSmartDropdownOffset()
+                Box {
+                    Box(
+                        modifier = Modifier
+                            .size(30.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(InputSurface)
+                            .border(1.dp, InputBorder, RoundedCornerShape(6.dp))
+                            .paneNavItem(cornerRadius = 6.dp, onActivate = { showXInputHelp = !showXInputHelp }, highlightColor = NavHighlight)
+                            .smartDropdownAnchor(offset = xInputHelpOffset) { showXInputHelp = !showXInputHelp },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Outlined.HelpOutline,
+                            contentDescription = null,
+                            tint = TextPrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showXInputHelp,
+                        onDismissRequest = { showXInputHelp = false },
+                        offset = xInputHelpOffset.value,
+                        shape = RoundedCornerShape(8.dp),
+                        containerColor = CardSurface,
+                        modifier = Modifier
+                            .padding(10.dp)
+                            .width(280.dp)
+                    ) {
+                        HtmlText(
+                            stringResource(R.string.container_config_help_xinput),
+                            color = TextPrimary,
+                            fontSize = SettingLabelSize,
+                            lineHeight = 16.sp
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(4.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(Modifier.weight(1f)) {
+                    SettingCheckbox(
+                        label = stringResource(R.string.container_config_enable_dinput),
+                        checked = state.enableDInput.value,
+                        onCheckedChange = {
+                            state.enableDInput.value = it
+                            if (!inputApisLocked && it && state.enableXInput.value) state.enableXInput.value = false
+                        },
+                        enabled = !inputApisLocked
+                    )
+                }
+                var showDInputHelp by remember { mutableStateOf(false) }
+                val dInputHelpOffset = rememberSmartDropdownOffset()
+                Box {
+                    Box(
+                        modifier = Modifier
+                            .size(30.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(InputSurface)
+                            .border(1.dp, InputBorder, RoundedCornerShape(6.dp))
+                            .paneNavItem(cornerRadius = 6.dp, onActivate = { showDInputHelp = !showDInputHelp }, highlightColor = NavHighlight)
+                            .smartDropdownAnchor(offset = dInputHelpOffset) { showDInputHelp = !showDInputHelp },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Outlined.HelpOutline,
+                            contentDescription = null,
+                            tint = TextPrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showDInputHelp,
+                        onDismissRequest = { showDInputHelp = false },
+                        offset = dInputHelpOffset.value,
+                        shape = RoundedCornerShape(8.dp),
+                        containerColor = CardSurface,
+                        modifier = Modifier
+                            .padding(10.dp)
+                            .width(280.dp)
+                    ) {
+                        HtmlText(
+                            stringResource(R.string.container_config_help_dinput),
+                            color = TextPrimary,
+                            fontSize = SettingLabelSize,
+                            lineHeight = 16.sp
+                        )
+                    }
+                }
+            }
+
+        }
+    }
+}
+
+/**
+ * Proton's ARM64 build brings its own FEX for 64-bit and 32-bit games alike, so the emulators
+ * installed in the app, their versions, the Wine startup options and the Wine-side processor
+ * affinity have nothing to act on. FEX still reads its settings from the environment, which is
+ * what a preset is. Which Proton build runs the game is chosen here instead of a Wine version.
+ */
+@Composable
+private fun GamescopeAdvancedSection(state: GameSettingsStateHolder) {
+    if (state.linuxProtonEntries.value.isNotEmpty()) {
+        SettingGroup {
+            SettingDropdown(
+                label = stringResource(R.string.gamescope_proton_title),
+                entries = state.linuxProtonEntries.value,
+                selectedIndex = state.selectedLinuxProton.intValue,
+                onSelected = { state.selectedLinuxProton.intValue = it }
+            )
+            Spacer(Modifier.height(SettingTightGap))
+            Text(
+                text = stringResource(R.string.gamescope_proton_summary),
+                color = TextDim,
+                fontSize = SettingLabelSize
+            )
+        }
+        Spacer(Modifier.height(SettingSectionGap))
+    }
+    EmulatorSectionHeader(stringResource(R.string.gamescope_fex_title), null)
     Spacer(Modifier.height(8.dp))
     SettingGroup {
-        // DInput Mapper Type (only visible when DInput enabled)
-        if (state.enableDInput.value) {
-            SettingDropdown(
-                label = stringResource(R.string.container_config_directinput_mapper_type),
-                entries = state.dInputMapperTypeEntries.value,
-                selectedIndex = state.selectedDInputMapperType.intValue,
-                onSelected = { state.selectedDInputMapperType.intValue = it }
-            )
-            Spacer(Modifier.height(SettingItemGap))
-        }
-
-        // Enable XInput with help — only toggleable when Exclusive Input is on.
-        val inputApisLocked = if (isContainer) !state.containerExclusiveInput.value
-        else !state.shortcutExclusiveXInput.value
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(Modifier.weight(1f)) {
-                SettingCheckbox(
-                    label = stringResource(R.string.container_config_enable_xinput),
-                    checked = state.enableXInput.value,
-                    onCheckedChange = {
-                        state.enableXInput.value = it
-                        if (!inputApisLocked && it && state.enableDInput.value) state.enableDInput.value = false
-                    },
-                    enabled = !inputApisLocked
-                )
-            }
-            var showXInputHelp by remember { mutableStateOf(false) }
-            val xInputHelpOffset = rememberSmartDropdownOffset()
-            Box {
-                Box(
-                    modifier = Modifier
-                        .size(30.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(InputSurface)
-                        .border(1.dp, InputBorder, RoundedCornerShape(6.dp))
-                        .paneNavItem(cornerRadius = 6.dp, onActivate = { showXInputHelp = !showXInputHelp }, highlightColor = NavHighlight)
-                        .smartDropdownAnchor(offset = xInputHelpOffset) { showXInputHelp = !showXInputHelp },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Outlined.HelpOutline,
-                        contentDescription = null,
-                        tint = TextPrimary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-                DropdownMenu(
-                    expanded = showXInputHelp,
-                    onDismissRequest = { showXInputHelp = false },
-                    offset = xInputHelpOffset.value,
-                    shape = RoundedCornerShape(8.dp),
-                    containerColor = CardSurface,
-                    modifier = Modifier
-                        .padding(10.dp)
-                        .width(280.dp)
-                ) {
-                    HtmlText(
-                        stringResource(R.string.container_config_help_xinput),
-                        color = TextPrimary,
-                        fontSize = SettingLabelSize,
-                        lineHeight = 16.sp
-                    )
-                }
-            }
-        }
-
-        Spacer(Modifier.height(4.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(Modifier.weight(1f)) {
-                SettingCheckbox(
-                    label = stringResource(R.string.container_config_enable_dinput),
-                    checked = state.enableDInput.value,
-                    onCheckedChange = {
-                        state.enableDInput.value = it
-                        if (!inputApisLocked && it && state.enableXInput.value) state.enableXInput.value = false
-                    },
-                    enabled = !inputApisLocked
-                )
-            }
-            var showDInputHelp by remember { mutableStateOf(false) }
-            val dInputHelpOffset = rememberSmartDropdownOffset()
-            Box {
-                Box(
-                    modifier = Modifier
-                        .size(30.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(InputSurface)
-                        .border(1.dp, InputBorder, RoundedCornerShape(6.dp))
-                        .paneNavItem(cornerRadius = 6.dp, onActivate = { showDInputHelp = !showDInputHelp }, highlightColor = NavHighlight)
-                        .smartDropdownAnchor(offset = dInputHelpOffset) { showDInputHelp = !showDInputHelp },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Outlined.HelpOutline,
-                        contentDescription = null,
-                        tint = TextPrimary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-                DropdownMenu(
-                    expanded = showDInputHelp,
-                    onDismissRequest = { showDInputHelp = false },
-                    offset = dInputHelpOffset.value,
-                    shape = RoundedCornerShape(8.dp),
-                    containerColor = CardSurface,
-                    modifier = Modifier
-                        .padding(10.dp)
-                        .width(280.dp)
-                ) {
-                    HtmlText(
-                        stringResource(R.string.container_config_help_dinput),
-                        color = TextPrimary,
-                        fontSize = SettingLabelSize,
-                        lineHeight = 16.sp
-                    )
-                }
-            }
-        }
-
+        SettingDropdown(
+            label = stringResource(R.string.gamescope_fex_preset),
+            entries = state.fexcorePresetEntries.value,
+            selectedIndex = state.selectedFexcorePreset.intValue,
+            onSelected = { state.selectedFexcorePreset.intValue = it }
+        )
+        Spacer(Modifier.height(SettingTightGap))
+        Text(
+            text = stringResource(R.string.gamescope_fex_summary),
+            color = TextDim,
+            fontSize = SettingLabelSize
+        )
     }
 }
 
@@ -5058,6 +5457,10 @@ private fun AdvancedSection(
     state: GameSettingsStateHolder,
     callbacks: GameSettingsCallbacks
 ) {
+    if (state.gamescopeContainer.value) {
+        GamescopeAdvancedSection(state)
+        return
+    }
 
     // Wine/Proton version (read-only); shown only on existing containers where it isn't editable (new ones pick it in General).
     val wineVersionDisplay = state.wineVersionDisplay.value
@@ -5325,7 +5728,7 @@ private fun ExecArgsHelper(onArgSelected: (String) -> Unit) {
             shape = RoundedCornerShape(8.dp),
             containerColor = CardSurface,
             modifier = Modifier
-                .height(360.dp)
+                .heightIn(max = 360.dp)
                 .width(240.dp)
         ) {
             ExtraArgPresets.forEach { group ->
@@ -5926,8 +6329,8 @@ private fun FrameGenPresetSlider(
                 fontSize = SettingLabelSize,
                 fontWeight = FontWeight.Medium,
                 letterSpacing = 0.3.sp,
+                modifier = Modifier.weight(1f),
             )
-            Spacer(Modifier.weight(1f))
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(6.dp))
@@ -6018,9 +6421,11 @@ private fun SettingSlider(
                 color = TextSecondary,
                 fontSize = SettingLabelSize,
                 fontWeight = FontWeight.Medium,
-                letterSpacing = 0.3.sp
+                letterSpacing = 0.3.sp,
+                // Both children were unweighted, so a long localized label was measured
+                // against the whole row and left the value chip nothing.
+                modifier = Modifier.weight(1f)
             )
-            Spacer(Modifier.weight(1f))
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(6.dp))

@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -39,6 +40,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ExitToApp
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Album
+import androidx.compose.material.icons.outlined.AutoAwesomeMotion
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Download
@@ -121,7 +123,7 @@ private val DrawerWidth = SessionDrawerStyle.Width
 private val DrawerStartPadding = SessionDrawerStyle.StartPadding
 private val DrawerVerticalPadding = SessionDrawerStyle.VerticalPadding
 
-enum class RetroPane { DISPLAY, SOUND, CONTROLS, HUD, SAVES, PERFORMANCE, MEMCARDS, NETWORK, SYSTEM }
+enum class RetroPane { DISPLAY, FRAMEGEN, SOUND, CONTROLS, HUD, SAVES, PERFORMANCE, MEMCARDS, NETWORK, SYSTEM }
 
 class RetroRenamePrompt(
     val title: String,
@@ -258,6 +260,7 @@ class RetroMenuController {
     var bottomEntries by mutableStateOf<List<RetroMenuEntry.Action>>(emptyList())
         private set
     var entriesProvider: ((RetroPane?) -> List<RetroMenuEntry>)? = null
+    var paneContentProvider: ((RetroPane?) -> (@Composable () -> Unit)?)? = null
     var bottomProvider: (() -> List<RetroMenuEntry.Action>)? = null
     var renamePrompt by mutableStateOf<RetroRenamePrompt?>(null)
     var conflictPrompt by mutableStateOf<RetroConflictPrompt?>(null)
@@ -488,7 +491,8 @@ fun RetroDrawerMenu(controller: RetroMenuController) {
                         if (controller.pane == null) {
                             RetroActionGrid(controller, paneScale)
                         } else {
-                            RetroPaneList(controller, paneScale)
+                            val custom = controller.paneContentProvider?.invoke(controller.pane)
+                            if (custom != null) custom() else RetroPaneList(controller, paneScale)
                         }
                     }
                     if (controller.pane == null && controller.bottomEntries.isNotEmpty()) {
@@ -1480,7 +1484,10 @@ internal fun RetroRenameDialog(
         Column(
             modifier =
                 Modifier
-                    .width(320.dp)
+                    // Never capped against the window: at 320 dp this was flush to both
+                    // edges on a 360 dp phone and clipped on anything narrower.
+                    .widthIn(max = 320.dp)
+                    .fillMaxWidth(0.92f)
                     .clip(RoundedCornerShape(16.dp))
                     .background(WinNativeSurface)
                     .border(1.dp, WinNativeOutline, RoundedCornerShape(16.dp))
@@ -1553,7 +1560,10 @@ internal fun RetroConfirmDialog(prompt: RetroConfirmPrompt) {
         Column(
             modifier =
                 Modifier
-                    .width(340.dp)
+                    // Never capped against the window: at 340 dp this was flush to both
+                    // edges on a 360 dp phone and clipped on anything narrower.
+                    .widthIn(max = 340.dp)
+                    .fillMaxWidth(0.92f)
                     .clip(RoundedCornerShape(16.dp))
                     .background(WinNativeSurface)
                     .border(1.dp, WinNativeOutline, RoundedCornerShape(16.dp))
@@ -1637,7 +1647,10 @@ internal fun RetroConflictDialog(prompt: RetroConflictPrompt) {
         Column(
             modifier =
                 Modifier
-                    .width(340.dp)
+                    // Never capped against the window: at 340 dp this was flush to both
+                    // edges on a 360 dp phone and clipped on anything narrower.
+                    .widthIn(max = 340.dp)
+                    .fillMaxWidth(0.92f)
                     .clip(RoundedCornerShape(16.dp))
                     .background(WinNativeSurface)
                     .border(1.dp, WinNativeOutline, RoundedCornerShape(16.dp))
@@ -1997,6 +2010,11 @@ object RetroDrawerTabs {
         val tabs = mutableListOf<RetroTabSpec>()
         tabs += RetroTabSpec(null, Icons.Outlined.Apps, context.getString(R.string.retro_tab_menu))
         tabs += RetroTabSpec(RetroPane.DISPLAY, Icons.Outlined.Monitor, context.getString(R.string.retro_tab_display))
+        tabs += RetroTabSpec(
+            RetroPane.FRAMEGEN,
+            Icons.Outlined.AutoAwesomeMotion,
+            context.getString(R.string.session_drawer_frame_generation),
+        )
         if (includePerformance) {
             tabs += RetroTabSpec(RetroPane.PERFORMANCE, Icons.Outlined.Bolt, context.getString(R.string.retro_ps2_tab_performance))
         }

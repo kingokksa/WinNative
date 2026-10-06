@@ -27,6 +27,16 @@ native NetPlay engine.
 | --- | --- | --- | --- |
 | Dolphin | GameCube/Wii emulation + NetPlay | GPL-2.0-or-later | https://github.com/dolphin-emu/dolphin |
 
+## Audio
+
+The DirectAudio audio driver is a native Wine → Android AAudio mmdevapi driver by
+**The412Banner**. WinNative ships his release binaries **unmodified**; checksums, the source
+offer and the verbatim license files are in `app/src/main/assets/directaudio/`.
+
+| Component | Role | License | Source |
+| --- | --- | --- | --- |
+| DirectAudio | Wine → Android AAudio audio driver, incl. microphone capture | LGPL-2.1-or-later | https://github.com/The412Banner/directaudio |
+
 ## Bundled libretro cores
 
 Each core is shipped as an unmodified `arm64-v8a` build and loaded through LibretroDroid.
@@ -81,6 +91,20 @@ the user's own Lossless Scaling installation, which they must own separately on 
 | rcheevos | RetroAchievements client library | MIT | https://github.com/RetroAchievements/rcheevos |
 | Snapdragon Game Super Resolution (SGSR) | Upscaling shader | BSD-3-Clause | https://github.com/quic/snapdragon-gsr |
 | Winlator | Windows-on-Android base this project forks | GPL-3.0 | https://github.com/brunodev85/winlator |
+
+## Controller support
+
+Steam Controller support and the visual controller test / binding screen were written by
+**The412Banner** for **Bannerlator** and ported into WinNative. SDL3 is
+built with an isolated Java/JNI namespace and Bluetooth transport fixes under
+`vendor/maven/org/libsdl/android/SDL3/`; the source pin, patch and rebuild script are in
+`tools/sdl/`. It is only used to read Valve
+HIDAPI devices; every other controller keeps WinNative's normal Android input path.
+
+| Component | Role | License | Source |
+| --- | --- | --- | --- |
+| Bannerlator | Steam Controller backend, pad artwork and the controller test / visual binder this port is derived from | GPL-3.0 | https://github.com/The412Banner/Bannerlator |
+| SDL3 3.4.16 (WinNative Steam Controller build) | HIDAPI Steam Controller drivers | Zlib | https://github.com/libsdl-org/SDL |
 
 ## Source availability
 
