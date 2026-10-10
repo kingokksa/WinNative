@@ -2710,6 +2710,7 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity
                         extractGraphicsDriverFiles();
                         resolveAudioDriver();
                         changeWineAudioDriver();
+                        applyColorCursorRegistry();
 
                         try {
                             if (steamFuture != null) steamFuture.get();
@@ -8287,6 +8288,8 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity
             envVars.putAll(overrideEnvVars);
             overrideEnvVars.clear();
         }
+
+        applyColorCursors();
 
         environment = new XEnvironment(this, imageFs);
         environment.addComponent(
@@ -14063,6 +14066,24 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity
         audioDriver = Container.DEFAULT_AUDIO_DRIVER;
         runOnUiThread(() -> android.widget.Toast.makeText(
                 this, R.string.directaudio_unavailable, android.widget.Toast.LENGTH_LONG).show());
+    }
+
+    private void applyColorCursors() {
+        if (waylandMode || gamescopeMode) return;
+        String toggle = envVars.get("BANNER_X11_RENDER");
+        if (toggle != null && (toggle.equals("0") || toggle.equalsIgnoreCase("false"))) return;
+        xServer.enableRenderCursors();
+    }
+
+    private void applyColorCursorRegistry() {
+        if (waylandMode) return;
+        File userRegFile = new File(imageFs.getRootDir(), ImageFs.WINEPREFIX + "/user.reg");
+        if (!userRegFile.exists()) return;
+        try (WineRegistryEditor registryEditor = new WineRegistryEditor(userRegFile)) {
+            registryEditor.setStringValue("Software\\Wine\\X11 Driver", "ClientSideWithRender", "N");
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to disable client-side RENDER", e);
+        }
     }
 
     private void changeWineAudioDriver() {
